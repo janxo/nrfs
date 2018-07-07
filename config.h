@@ -10,6 +10,7 @@
 #define MOUNTPOINT "mountpoint"
 #define RAID "raid"
 #define SERVERS "servers"
+#define HOTSWAP "hotswap"
 
 
 

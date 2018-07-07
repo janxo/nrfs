@@ -4,9 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h> /* superset of previous */
 #include "info.h"
 #include "config.h"
-#include <stdlib.h>
+
 
 void parse_config (info *storage_info, char *path);
 

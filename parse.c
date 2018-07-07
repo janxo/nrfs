@@ -17,26 +17,7 @@
 
 #define MAXLEN 80
 #define MAXLEN_VAL 1024
-#define CONFIG_FILE "sample.txt"
 
-struct sample_parameters
-{
-  char item[MAXLEN];
-  char flavor[MAXLEN];
-  char size[MAXLEN];
-}
-  sample_parameters;
-
-/*
- * initialize data to default values
- */
-void
-init_parameters (struct sample_parameters * parms)
-{
-  strncpy (parms->item, "cup", MAXLEN);
-  strncpy (parms->item, "chocolate", MAXLEN);
-  strncpy (parms->item, "small", MAXLEN);
-}
 
 /*
  * trim: get rid of trailing and leading whitespace...
@@ -60,6 +41,41 @@ trim (char * s)
   /* Copy finished string */
   strcpy (s, s1);
   return s;
+}
+
+/** 
+ *  Receives single server address splints it
+ *  and initializes it. First part of token is
+ *  address, second part is port.
+ */
+void parse_server(remote *server, char *value) {
+  char *tok_s;
+  printf("IN PARSE SERVER\n");
+  printf("Server is --%s\n", value);
+  char *tok = strtok_r(value, ": ", &tok_s);
+  printf("value is --%s\n", value);
+  printf("tok is --%s\n", tok);
+  strncpy(server->ip_address, tok, MAXLEN);
+  printf("server address --%s\n", server->ip_address);
+  tok = strtok_r(NULL, " ", &tok_s);
+  printf("tok is --%s\n", tok);
+  strncpy(server->port, tok, MAXLEN);
+  printf("server port is --%s\n", server->port);
+}
+
+void parse_servers(storage *storage,  char *servers) {
+  printf("IN PARSE SERVERS\n");
+  char *tok_s;
+  char *tok = strtok_r(servers, ",", &tok_s);
+  
+  while (tok != NULL) {
+    printf("IN LOOP -- %s\n", tok);
+    parse_server(&storage->servers[storage->server_count], tok);
+    storage->server_count++;
+    tok = strtok_r(NULL, ",", &tok_s);
+  }
+  
+  printf("N servers -- %d\n", storage->server_count);
 }
 
 /*
@@ -118,16 +134,7 @@ parse_config (info *storage_info, char *path)
     trim (value);
     printf("NAME -- %s\n", name);
     printf("VALUE -- %s\n", value);
-    /* Copy into correct entry in parameters struct */
-    // if (strcmp(name, "item")==0)
-    //   strncpy (parms->item, value, MAXLEN);
-    // else if (strcmp(name, "flavor")==0)
-    //   strncpy (parms->flavor, value, MAXLEN);
-    // else if (strcmp(name, "size")==0)
-    //   strncpy (parms->size, value, MAXLEN);
-    // else
-    //   printf ("WARNING: %s/%s: Unknown name/value pair!\n",
-    //     name, value);
+   
     if (strcmp(name, ERRORLOG) == 0) {
       strncpy (storage_info->errorlog, value, MAXLEN);
       printf ("info errorlog --%s\n", storage_info->errorlog);
@@ -155,10 +162,16 @@ parse_config (info *storage_info, char *path)
       storage_info->storages[stor_num].raid = atoi(value);
       printf ("raid -- %d\n", storage_info->storages[stor_num].raid);
     } else if (strcmp(name, SERVERS) == 0) {
-
+      int stor_num = storage_info->storage_count - 1;
+      storage *cur_storage = &storage_info->storages[stor_num];
+      cur_storage->server_count = 0;
+      parse_servers(cur_storage, value);
+    } else if (strcmp(name, HOTSWAP) == 0) {
+      int stor_num = storage_info->storage_count - 1;
+      remote *hotswap = &storage_info->storages[stor_num].hotswap;
+      parse_server(hotswap, value);
     } else {
-      printf("IN ELSE\n");
-      printf("%s\n", name);
+      printf("WARNING: %s/%s: Unknown name/value pair!\n", name, value);
     }
   }
 
