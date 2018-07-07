@@ -50,32 +50,32 @@ trim (char * s)
  */
 void parse_server(remote *server, char *value) {
   char *tok_s;
-  printf("IN PARSE SERVER\n");
-  printf("Server is --%s\n", value);
+  // printf("IN PARSE SERVER\n");
+  // printf("Server is --%s\n", value);
   char *tok = strtok_r(value, ": ", &tok_s);
-  printf("value is --%s\n", value);
-  printf("tok is --%s\n", tok);
+  // printf("value is --%s\n", value);
+  // printf("tok is --%s\n", tok);
   strncpy(server->ip_address, tok, MAXLEN);
-  printf("server address --%s\n", server->ip_address);
+  // printf("server address --%s\n", server->ip_address);
   tok = strtok_r(NULL, " ", &tok_s);
-  printf("tok is --%s\n", tok);
+  // printf("tok is --%s\n", tok);
   strncpy(server->port, tok, MAXLEN);
-  printf("server port is --%s\n", server->port);
+  // printf("server port is --%s\n", server->port);
 }
 
 void parse_servers(storage *storage,  char *servers) {
-  printf("IN PARSE SERVERS\n");
+  // printf("IN PARSE SERVERS\n");
   char *tok_s;
   char *tok = strtok_r(servers, ",", &tok_s);
   
   while (tok != NULL) {
-    printf("IN LOOP -- %s\n", tok);
+    // printf("IN LOOP -- %s\n", tok);
     parse_server(&storage->servers[storage->server_count], tok);
     storage->server_count++;
     tok = strtok_r(NULL, ",", &tok_s);
   }
   
-  printf("N servers -- %d\n", storage->server_count);
+  // printf("N servers -- %d\n", storage->server_count);
 }
 
 /*
@@ -104,12 +104,12 @@ parse_config (info *storage_info, char *path)
 {
   char *s, buff[256];
   FILE *fp = fopen (path, "r");
-  printf("%s\n", path);
+  // printf("%s\n", path);
   if (fp == NULL)
   {
     return;
   }
-  printf("SUCCES OPEN\n");
+  // printf("SUCCES OPEN\n");
   /* Read next line */
   while ((s = fgets (buff, sizeof buff, fp)) != NULL)
   {
@@ -132,35 +132,34 @@ parse_config (info *storage_info, char *path)
     else
       strncpy (value, s, MAXLEN);
     trim (value);
-    printf("NAME -- %s\n", name);
-    printf("VALUE -- %s\n", value);
+    // printf("NAME -- %s\n", name);
+    // printf("VALUE -- %s\n", value);
    
     if (strcmp(name, ERRORLOG) == 0) {
       strncpy (storage_info->errorlog, value, MAXLEN);
-      printf ("info errorlog --%s\n", storage_info->errorlog);
+      // printf ("info errorlog --%s\n", storage_info->errorlog);
     } else if (strcmp(name, CACHE_SIZE) == 0) {
       strncpy (storage_info->cache_size, value, MAXLEN);
-      printf ("cache __ %s\n", storage_info->cache_size);
+      // printf ("cache __ %s\n", storage_info->cache_size);
     } else if (strcmp(name, CACHE_REPLACEMENT) == 0) {
       strncpy (storage_info->cache_replacement, value, MAXLEN);
-      printf ("cche repl __ %s\n", storage_info->cache_replacement);
+      // printf ("cche repl __ %s\n", storage_info->cache_replacement);
     } else if (strcmp(name, TIMEOUT) == 0) {
       storage_info->timeout = atoi(value);
-      printf ("timeout is -- %d\n", storage_info->timeout);
+      // printf ("timeout is -- %d\n", storage_info->timeout);
     } else if (strcmp(name, DISKNAME) == 0) {
       storage_info->storage_count++;
       int stor_num = storage_info->storage_count - 1;
       strncpy (storage_info->storages[stor_num].diskname, value, MAXLEN);
-      printf ("diskname -- %s\n", storage_info->storages[stor_num].diskname);
-      
+      // printf ("diskname -- %s\n", storage_info->storages[stor_num].diskname);
     } else if (strcmp(name, MOUNTPOINT) == 0) {
       int stor_num = storage_info->storage_count - 1;
       strncpy (storage_info->storages[stor_num].mountpoint, value, MAXLEN);
-      printf ("mount point -- %s\n", storage_info->storages[stor_num].mountpoint);
+      // printf ("mount point -- %s\n", storage_info->storages[stor_num].mountpoint);
     } else if (strcmp(name, RAID) == 0) {
       int stor_num = storage_info->storage_count - 1;
       storage_info->storages[stor_num].raid = atoi(value);
-      printf ("raid -- %d\n", storage_info->storages[stor_num].raid);
+      // printf ("raid -- %d\n", storage_info->storages[stor_num].raid);
     } else if (strcmp(name, SERVERS) == 0) {
       int stor_num = storage_info->storage_count - 1;
       storage *cur_storage = &storage_info->storages[stor_num];
@@ -171,7 +170,7 @@ parse_config (info *storage_info, char *path)
       remote *hotswap = &storage_info->storages[stor_num].hotswap;
       parse_server(hotswap, value);
     } else {
-      printf("WARNING: %s/%s: Unknown name/value pair!\n", name, value);
+      // printf("WARNING: %s/%s: Unknown name/value pair!\n", name, value);
     }
   }
 

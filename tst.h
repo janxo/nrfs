@@ -1,0 +1,1 @@
+void test(info *storage_info);

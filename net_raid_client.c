@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include "parse.h"
 #include "info.h"
+#include "tst.h"
 
 
 
@@ -14,9 +15,10 @@ int main(int argc, char *argv[]) {
 
 	info inf;
 	inf.storage_count = 0;
-	printf("%d\n", argc);
-	printf("%s\n", argv[1]);
+	// printf("%d\n", argc);
+	// printf("%s\n", argv[1]);
 	//printf("%d\n", sizeof(inf));
 	parse_config(&inf, argv[1]);
+	test(&inf);
 	return 0;
 }
