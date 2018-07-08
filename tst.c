@@ -59,3 +59,24 @@ void test(info *storage_info) {
 
 	fclose(fp);
 }
+
+
+void test_storage(strg_info_t *strg_info) {
+		// printf("errorlog name -- %s\n", strg_info->errorlog);
+	char buff[128];
+	printf("%s\n", strg_info->errorlog);
+	FILE *fp = fopen (strg_info->errorlog, "w");
+	fprintf(fp, "Initialize Logging.....\n");
+	fprintf(fp, "Logging config.....\n");
+
+	fprintf(fp, "%s = %s\n", ERRORLOG, strg_info->errorlog);
+	fprintf(fp, "%s = %s\n", CACHE_SIZE, strg_info->cache_size);
+	fprintf(fp, "%s = %s\n", CACHE_REPLACEMENT, strg_info->cache_replacement);
+
+	sprintf(buff, "%d", strg_info->timeout);
+	fprintf(fp, "%s = %s\n", TIMEOUT, buff);
+
+	print_storage(fp, &strg_info->strg);
+
+	fclose(fp);
+}

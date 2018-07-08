@@ -10,7 +10,7 @@
 typedef struct remote {
 	char ip_address[ADDR_LEN];
 	char port[PORT_LEN];
-}remote;
+} remote;
 
 typedef struct storage {
 	char diskname[NAME_LEN];
@@ -19,7 +19,8 @@ typedef struct storage {
 	char raid;
 	remote servers[MAX_SERVERS];
 	remote hotswap;
-}storage;
+	// remote asd;
+} storage;
 
 typedef struct info {
 	char errorlog[NAME_LEN];
@@ -28,8 +29,16 @@ typedef struct info {
 	int timeout;
 	int storage_count;
 	storage storages[MAX_STORAGES];
-}info;
+} info;
 
+
+typedef struct strg_info {
+	char errorlog[NAME_LEN];
+	char cache_size[16];
+	char cache_replacement[16];
+	int timeout;
+	storage strg;
+} strg_info_t;
 
 
 
