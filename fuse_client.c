@@ -60,7 +60,14 @@ int main(int argc, char *argv[]) {
 	init_storage(argv[1], argv[2], &strg);
 
 	test_storage(&strg);
+	init_connection(&strg);
+	char *fuse_argv[3];
+	fuse_argv[0] = malloc(20);
+	strcpy(fuse_argv[0], argv[0]);
+	fuse_argv[1] = malloc(20);
+	strcpy(fuse_argv[1], strg.strg.mountpoint);
+	fuse_argv[2] = NULL;
 
-	// return fuse_main(argc, argv, &nrfs1_oper, NULL);
+	return fuse_main(argc-1, fuse_argv, &nrfs1_oper, NULL);
 	return 0;
 }
