@@ -13,44 +13,42 @@
 #define FUSE_EXEC "fuse_client"
 
 
-// static void run_storage(storage *stor, char *config);
-// static void init(info *inf, char *path);
+static void run_storage(char *config, char *diskname);
+static void init(char *config, char **disknames, int size);
 
 
 
-// static void run_storage(storage *stor, char *config) {
-// 	pid_t pid;
+static void run_storage(char *config, char *diskname) {
+	pid_t pid;
 
-// 	pid = fork();
-// 	int status;
-// 	if (pid < 0) {
-// 		fprintf(stderr, "Fork Failed");
+	pid = fork();
+	int status;
+	if (pid < 0) {
+		fprintf(stderr, "Fork Failed");
 		
 
-// 	} else if (pid == 0) {
-// 		char *args[4];
-// 		char exec_file[32];
-// 		strncpy(exec_file, FUSE_EXEC, sizeof(FUSE_EXEC));
-// 		//printf("exec is -- %s\n", exec_file);
-// 		args[0] = exec_file;
-// 		args[1] = config;
-// 		args[2] = stor->diskname;
-// 		args[3] = NULL;
-// 		execv(args[0], args);
-// 	}
+	} else if (pid == 0) {
+		char *args[4];
+		char exec_file[32];
+		strncpy(exec_file, FUSE_EXEC, sizeof(FUSE_EXEC));
+		args[0] = exec_file;
+		args[1] = config;
+		args[2] = diskname;
+		args[3] = NULL;
+		execv(args[0], args);
+	}
 
-// 	wait(&status);
-// }
+	wait(&status);
+}
 
 
-// static void init(info *inf, char *path) {
-// 	int nstorages = inf->storage_count;
-// 	int i = 0;
-// 	for (; i < nstorages; ++i) {
-// 		run_storage(&inf->storages[i], path);
-// 	}
+static void init(char *config, char **disknames, int size) {
+	int i = 0;
+	for (; i < size; ++i) {
+		run_storage(config, disknames[i]);
+	}
 	
-// }
+}
 
 int main(int argc, char *argv[]) {
 	if (argc < 2) {
@@ -62,11 +60,8 @@ int main(int argc, char *argv[]) {
 	char *names[10];
 	int count = get_disknames(argv[1], names);
 
+	init(argv[1], names, count);
 
-	int i = 0;
-	for (; i < count; ++i)
-	{
-		printf("diskname -- %s\n", names[i]);
-	}
+
 	return 0;
 }

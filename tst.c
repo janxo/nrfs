@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include "info.h"
 #include "config.h"
-
+#include "tst.h"
 
 static void print_server(FILE *fp, remote *server) {
 	fprintf(fp, "%s", server->ip_address);
@@ -64,10 +64,11 @@ void test(info *storage_info) {
 void test_storage(strg_info_t *strg_info) {
 		// printf("errorlog name -- %s\n", strg_info->errorlog);
 	char buff[128];
-	printf("%s\n", strg_info->errorlog);
-	FILE *fp = fopen (strg_info->errorlog, "w");
+	// printf("%s\n", strg_info->errorlog);
+	FILE *fp = fopen (strg_info->errorlog, "a");
 	fprintf(fp, "Initialize Logging.....\n");
 	fprintf(fp, "Logging config.....\n");
+	
 
 	fprintf(fp, "%s = %s\n", ERRORLOG, strg_info->errorlog);
 	fprintf(fp, "%s = %s\n", CACHE_SIZE, strg_info->cache_size);

@@ -11,8 +11,8 @@ client: client.o fuse_client.o parse.o tst.o
 server: server.o
 	$(CC) net_raid_server.o -o net_raid_server
 
-fuse_client: client.o parse.o fuse_client.o tst.o
-	$(CC) fuse_client.o parse.o tst.o -o fuse_client
+fuse_client: client.o parse.o tst.o
+	$(CC) -Wall fuse_client.c $(FUSE) parse.o tst.o -o fuse_client
 
 parse: parse.o
 	$(CC) parse.o -o parse
