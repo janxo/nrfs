@@ -5,7 +5,7 @@ FUSE=`pkg-config fuse --cflags --libs`
 
 all: client server fuse_client
 
-client: client.o fuse_client.o parse.o tst.o
+client: client.o parse.o tst.o
 	$(CC) net_raid_client.o parse.o tst.o -o net_raid_client​
 
 server: server.o
@@ -23,9 +23,6 @@ client.o: net_raid_client.c
 server.o: net_raid_server.c
 	$(CC) $(CFLAGS) net_raid_server.c
 
-fuse_client.o: fuse_client.c
-	$(CC) $(CFLAGS) $(FUSE) fuse_client.c
-
 parse.o: parse.c
 	$(CC) $(CFLAGS) parse.c
 
@@ -34,3 +31,6 @@ tst.o: tst.c
 
 clean:
 	rm *o *log $(OUT)
+
+unmount: 
+	fusermount -u testdir1 && fusermount -u testdir2

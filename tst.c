@@ -6,6 +6,8 @@
 #include "config.h"
 #include "tst.h"
 
+#define PATH "tst.log"
+
 static void print_server(FILE *fp, remote *server) {
 	fprintf(fp, "%s", server->ip_address);
 	fprintf(fp, ":");
@@ -37,35 +39,35 @@ static void print_storage(FILE *fp, storage *stor) {
 	fprintf(fp, "\n");
 }
 
-void test(info *storage_info) {
-	// printf("errorlog name -- %s\n", storage_info->errorlog);
-	char buff[128];
-	FILE *fp = fopen (storage_info->errorlog, "w");
-	// fprintf(fp, "Initialize Logging.....\n");
-	// fprintf(fp, "Logging config.....\n");
+// void test(info *storage_info) {
+// 	// printf("errorlog name -- %s\n", storage_info->errorlog);
+// 	char buff[128];
+// 	FILE *fp = fopen (storage_info->errorlog, "w");
+// 	// fprintf(fp, "Initialize Logging.....\n");
+// 	// fprintf(fp, "Logging config.....\n");
 
-	fprintf(fp, "%s = %s\n", ERRORLOG, storage_info->errorlog);
-	fprintf(fp, "%s = %s\n", CACHE_SIZE, storage_info->cache_size);
-	fprintf(fp, "%s = %s\n", CACHE_REPLACEMENT, storage_info->cache_replacement);
+// 	fprintf(fp, "%s = %s\n", ERRORLOG, storage_info->errorlog);
+// 	fprintf(fp, "%s = %s\n", CACHE_SIZE, storage_info->cache_size);
+// 	fprintf(fp, "%s = %s\n", CACHE_REPLACEMENT, storage_info->cache_replacement);
 
-	sprintf(buff, "%d", storage_info->timeout);
-	fprintf(fp, "%s = %s\n", TIMEOUT, buff);
+// 	sprintf(buff, "%d", storage_info->timeout);
+// 	fprintf(fp, "%s = %s\n", TIMEOUT, buff);
 
-	int n_storages = storage_info->storage_count;
-	int i = 0;
-	for (; i < n_storages; ++i) {
-		print_storage(fp, &storage_info->storages[i]);
-	}
+// 	int n_storages = storage_info->storage_count;
+// 	int i = 0;
+// 	for (; i < n_storages; ++i) {
+// 		print_storage(fp, &storage_info->storages[i]);
+// 	}
 
-	fclose(fp);
-}
+// 	fclose(fp);
+// }
 
 
 void test_storage(strg_info_t *strg_info) {
 		// printf("errorlog name -- %s\n", strg_info->errorlog);
 	char buff[128];
 	// printf("%s\n", strg_info->errorlog);
-	FILE *fp = fopen (strg_info->errorlog, "a");
+	FILE *fp = fopen (PATH, "a");
 	fprintf(fp, "Initialize Logging.....\n");
 	fprintf(fp, "Logging config.....\n");
 	

@@ -13,7 +13,7 @@
 #include "config.h"
 
 
-void parse_config(info *storage_info, char *path);
+// void parse_config(info *storage_info, char *path);
 void init_storage(char *path, char *diskname, strg_info_t *storage_info);
 int get_disknames(char *path, char **disknames);
 
