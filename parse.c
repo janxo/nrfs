@@ -11,7 +11,9 @@ void parse_servers(storage *storage,  char *servers);
 int get_disknames(char *path, char **disknames);
 
 
-
+/** counts number of storages and copies storage names
+    into passed string array.
+    */ 
 int get_disknames(char *path, char **disknames) {
   int res = 0;
   char *s, buff[BUFFLEN];

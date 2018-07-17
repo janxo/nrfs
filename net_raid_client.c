@@ -50,6 +50,14 @@ static void init(char *config, char **disknames, int size) {
 	
 }
 
+
+void free_space(char **names, int size) {
+	int i = 0;
+	for (; i < size; ++i) {
+		free(names[i]);
+	}
+}
+
 int main(int argc, char *argv[]) {
 	if (argc < 2) {
 		fprintf(stderr, "No Config File Provided\n");
@@ -61,7 +69,7 @@ int main(int argc, char *argv[]) {
 	int count = get_disknames(argv[1], names);
 
 	init(argv[1], names, count);
-
+	free_space(names, count);
 
 	return 0;
 }

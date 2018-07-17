@@ -9,6 +9,7 @@
 #define ADDR_LEN 32
 #define PORT_LEN 8
 #define CACHE_LEN 10
+#define BUFF_len 4096
 
 typedef struct remote {
 	char ip_address[ADDR_LEN];
@@ -43,10 +44,28 @@ typedef struct strg_info {
 } strg_info_t;
 
 
+typedef struct file_info {
+	char path[NAME_LEN];
+	int flags;
+	int padding_size;
+} file_info;
 
-typedef struct info {
+typedef struct request {
+	int raid;
 	command fn;
-} info_t;
+	size_t size;
+	char path[NAME_LEN];
+	file_info f_info;
+	char buff[BUFF_len];
+} request_t;
+
+
+typedef struct response {
+	int status;
+	char *buff;
+} response_t;
+
+
 
 
 #endif

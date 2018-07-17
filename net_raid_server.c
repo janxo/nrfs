@@ -6,17 +6,39 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include "rdwrn.h"
+#include "info.h"
 #define BACKLOG 10
+
+request_t req;
+
+void readdir_handler(int cfd, char *buff) {
+
+}
+
+void write1_handler(int cfd, char *buff) {
+
+}
 
 void client_handler(int cfd) {
     printf("IN handler\n");
-    int buf[1024];
+    // int buf[1024];
+    request_t req;
     int data_size;
+    printf("Before loop\n");
     while (1) {
-        data_size = read (cfd, &buf, 1024);
-        if (data_size <= 0)
+        printf("IN the loop\n");
+        data_size = read (cfd, &req, sizeof(request_t));
+        printf("data_size ---- %d\n", data_size);
+        if (data_size <= 0) {
+            printf("data size -- %d\n", data_size);
             break;
-        write (cfd, &buf, data_size);
+        }
+        printf("raid is -- %d\n", req.raid);
+        printf("fn is -- %d\n", req.fn);
+        printf("path is -- %s\n", req.path);
+        printf("data is -- %s\n", req.buff);
+        // write (cfd, &buf, data_size);
     }
     close(cfd);
 }
@@ -55,7 +77,8 @@ int main(int argc, char* argv[])
                 client_handler(cfd);
                 exit(0);
             default:
-                close(cfd);
+                continue;
+                // close(cfd);
         }
     }
     close(sfd);

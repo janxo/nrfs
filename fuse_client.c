@@ -13,12 +13,14 @@
 #include <netinet/ip.h> /* superset of previous */
 #include <unistd.h>
 #include <arpa/inet.h>
+#include "rdwrn.h"
 #include "info.h"
 #include "parse.h"
 #include "tst.h"
 
 #define RAID1 1
 #define RAID5 5
+#define RAID1_MAIN 0
 
 void init(strg_info_t *strg);
 int init_connection(strg_info_t *strg);
@@ -58,6 +60,13 @@ char *get_time() {
 	return res;   
 }
 
+void log_msg(FILE *log_file, strg_info_t *strg, remote *server, char *msg) {
+	char *cur_time = get_time();
+	fprintf(log_file, "%s %s %s%s %s\n", cur_time, strg->strg.diskname,
+								 server->ip_address, server->port, msg);
+	free(cur_time);
+}
+
 /** initialize connection to servers */
 int init_connection(strg_info_t *strg) {
 	printf("IN client main\n");
@@ -78,11 +87,12 @@ int init_connection(strg_info_t *strg) {
 	    int success = connect(sfd, (struct sockaddr *) &addr, sizeof(struct sockaddr_in));
 	    if (success == 0) {
 	    	socket_fds[i] = sfd;
-	    	char *cur_time = get_time();
-	    	int len;
-	    	len = fprintf(log_file, "%s %s %s%s %s\n", cur_time, strg->strg.diskname, strg->strg.servers[i].ip_address, 
-	    											strg->strg.servers[i].port, "open connection");
-	    	printf("Connected successfully -- %d\n", len);
+	    	log_msg(log_file, strg, &strg->strg.servers[i], "open connection");
+	    	// char *cur_time = get_time();
+	    	// int len;
+	    	// len = fprintf(log_file, "%s %s %s%s %s\n", cur_time, strg->strg.diskname, strg->strg.servers[i].ip_address, 
+	    	// 										strg->strg.servers[i].port, "open connection");
+	    	// printf("Connected successfully -- %d\n", len);
 	    } else {
 	    	fprintf(stderr, "%s\n", "FAILED TO CONNECT");
 	    	return success;
@@ -110,22 +120,45 @@ void init(strg_info_t *strg) {
 }
 
 
-static int nrfs1_read(const char *path, char *buf, size_t size, off_t offset,
-					struct fuse_file_info *fi) {
-	info_t info;
-	info.fn = cmd_read;
+static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+			 off_t offset, struct fuse_file_info *fi) {
+	request_t req;
+	req.raid = RAID1;
+	req.fn = cmd_readdir;
 
-	send(socket_fds[0], &info, sizeof(info_t), 0);
+	int sfd = socket_fds[RAID1_MAIN];
+
+	write(sfd, &req, (sizeof(req.raid) + sizeof(req.fn)));
+	write(sfd, path, (strlen(path)+1));
+	return 0;
+}
+
+// static int nrfs1_creat(const char *path, mode_t mode, struct fuse_file_info *fi) {
+
+// }
+
+
+static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
+		      struct fuse_file_info *fi) {
+	request_t req;
+	req.raid = RAID1;
+	req.fn = cmd_write;
+
+	// int fd = open(path, fi.flags);
+	// int sfd = socket_fds[RAID1_MAIN];
+
+	// write(sfd, r);
+
 
 	return 0;
 }
 
-
 static struct fuse_operations nrfs1_oper = {
 	// .getattr	= nrfs1_getattr,
-	// .readdir	= nrfs1_readdir,
+	.readdir	= nrfs1_readdir,
 	// .open		= nrfs1_open,
 	// .read		= nrfs1_read,
+	.write		= nrfs1_write,
 };
 
 
@@ -133,7 +166,7 @@ static struct fuse_operations nrfs5_oper = {
 	// .getattr	= nrfs1_getattr,
 	// .readdir	= nrfs1_readdir,
 	// .open		= nrfs1_open,
-	.read		= nrfs1_read,
+	// .read		= nrfs1_read,
 };
 
 
@@ -151,11 +184,15 @@ int main(int argc, char *argv[]) {
 	init(&strg);
 	// printf("DATE __ %s\n", get_time());
 	int len = 32;
+	char buff1[len];
+	char buff2[len];
 	char *fuse_argv[3];
-	fuse_argv[0] = malloc(len);
-	strcpy(fuse_argv[0], argv[0]);
-	fuse_argv[1] = malloc(len);
-	strcpy(fuse_argv[1], strg.strg.mountpoint);
+	
+	strcpy(buff1, argv[0]);
+	strcpy(buff2, strg.strg.mountpoint);
+
+	fuse_argv[1] = buff2;
+	fuse_argv[0] = buff1;
 	fuse_argv[2] = NULL;
 
 	struct fuse_operations *nrfs_oper;

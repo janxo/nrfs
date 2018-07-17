@@ -1,4 +1,4 @@
-CFLAGS=-c -Wall
+CFLAGS=-c -Wall -g
 CC=gcc
 OUT=net_raid_client​ net_raid_server fuse_client
 FUSE=`pkg-config fuse --cflags --libs`
@@ -8,11 +8,11 @@ all: client server fuse_client
 client: client.o parse.o tst.o
 	$(CC) net_raid_client.o parse.o tst.o -o net_raid_client​
 
-server: server.o
-	$(CC) net_raid_server.o -o net_raid_server
+server: server.o rdwrn.o
+	$(CC) net_raid_server.o rdwrn.o -o net_raid_server
 
-fuse_client: client.o parse.o tst.o
-	$(CC) -Wall fuse_client.c $(FUSE) parse.o tst.o -o fuse_client
+fuse_client: client.o parse.o tst.o rdwrn.o
+	$(CC) -Wall fuse_client.c $(FUSE) parse.o rdwrn.o tst.o -o fuse_client
 
 parse: parse.o
 	$(CC) parse.o -o parse
@@ -28,6 +28,9 @@ parse.o: parse.c
 
 tst.o: tst.c
 	$(CC) $(CFLAGS) tst.c
+
+rdwrn.o: rdwrn.c
+	$(CC) $(CFLAGS) rdwrn.c
 
 clean:
 	rm *o *log $(OUT)
