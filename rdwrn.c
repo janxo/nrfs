@@ -9,9 +9,11 @@ ssize_t readn(int fd, void *buffer, size_t n) {
 	char *buf;
 
 	buf = buffer;
+	// printf("in readn before loop\n");
 	for (totRead = 0; totRead < n; ) {
+		// printf("in da loop");
 		numRead = read(fd, buf, n - totRead);
-
+		// printf("numRead -- %d\n", numRead);
 		if (numRead == 0)
 			return totRead;
 		if (numRead == -1) {
@@ -22,6 +24,7 @@ ssize_t readn(int fd, void *buffer, size_t n) {
 		}
 		totRead += numRead;
 		buf += numRead;
+		// printf("totread -- %d\n", totRead);
 	}
 	return totRead;
 

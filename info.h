@@ -1,7 +1,11 @@
 #ifndef __info__
 #define __info__
 
-#include "commands.h"
+#include <sys/types.h>
+
+#define RAID1 1
+#define RAID5 5
+#define RAID1_MAIN 0
 
 #define NAME_LEN 64
 #define MAX_SERVERS 16
@@ -10,6 +14,12 @@
 #define PORT_LEN 8
 #define CACHE_LEN 10
 #define BUFF_len 4096
+
+
+typedef enum {success = 0, error = -1} status;
+
+typedef enum {cmd_readdir, cmd_write} command;
+
 
 typedef struct remote {
 	char ip_address[ADDR_LEN];
@@ -48,21 +58,21 @@ typedef struct file_info {
 	char path[NAME_LEN];
 	int flags;
 	int padding_size;
+	off_t f_size;
 } file_info;
 
-typedef struct request {
+typedef struct {
 	int raid;
 	command fn;
-	size_t size;
-	char path[NAME_LEN];
+	// char path[NAME_LEN];
 	file_info f_info;
-	char buff[BUFF_len];
+	// char buff[BUFF_len];
 } request_t;
 
 
-typedef struct response {
-	int status;
-	char *buff;
+typedef struct {
+	status st;
+	char buff[BUFF_len];
 } response_t;
 
 
