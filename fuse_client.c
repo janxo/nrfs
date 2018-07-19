@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-// #include <pthread.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
@@ -28,8 +27,11 @@ void build_req(request_t *req, int raid, command cmd, char *path,
 							int padding_size, struct fuse_file_info *fi, int file_size);
 
 int *socket_fds;
-FILE *log_file;
+strg_info_t strg;
 
+// needed for fuse functions
+// for local functions strg arg is explicitly passed
+strg_info_t *strg_global;
 
 
 
@@ -61,11 +63,20 @@ char *get_time() {
 	return res;   
 }
 
-void log_msg(FILE *log_file, strg_info_t *strg, remote *server, char *msg) {
+void log_msg(strg_info_t *strg, int nth_server, char *msg) {
+	FILE *log_file = fopen(strg->errorlog, "a");
+		if (log_file == NULL) {
+			fprintf(stderr, "LOG FILE NOT FOUND\n");
+			return;
+		// exit(-1);
+	}
+
+	remote *server = &strg->strg.servers[nth_server];
 	char *cur_time = get_time();
 	fprintf(log_file, "%s %s %s:%s %s\n", cur_time, strg->strg.diskname,
 								 server->ip_address, server->port, msg);
 	free(cur_time);
+	fclose(log_file);
 }
 
 /** initialize connection to servers */
@@ -88,7 +99,7 @@ int init_connection(strg_info_t *strg) {
 	    int success = connect(sfd, (struct sockaddr *) &addr, sizeof(struct sockaddr_in));
 	    if (success == 0) {
 	    	socket_fds[i] = sfd;
-	    	log_msg(log_file, strg, &strg->strg.servers[i], "open connection");
+	    	log_msg(strg, i, "open connection");
 	    	// char *cur_time = get_time();
 	    	// int len;
 	    	// len = fprintf(log_file, "%s %s %s%s %s\n", cur_time, strg->strg.diskname, strg->strg.servers[i].ip_address, 
@@ -111,18 +122,19 @@ int init_connection(strg_info_t *strg) {
 
 
 void init(strg_info_t *strg) {
-	log_file = fopen(strg->errorlog, "a");
+	// log_file = fopen(strg->errorlog, "a");
 
-	if (log_file == NULL) {
-		fprintf(stderr, "LOG FILE NOT FOUND\n");
-		exit(-1);
-	}
+	// if (log_file == NULL) {
+	// 	fprintf(stderr, "LOG FILE NOT FOUND\n");
+	// 	exit(-1);
+	// }
 	init_connection(strg);
 }
 
 
 static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi) {
+	log_msg(&strg, RAID1_MAIN, "readdir");
 	request_t req;
 	response_t resp;
 	req.raid = RAID1;
@@ -140,18 +152,27 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	printf("buff -- %s\n", resp.buff);
 	// filler(buf, resp.buff, NULL, 0);
 	char *tok;
-	// tok = strtok(resp.buff, " ");
+	tok = strtok(resp.buff, " ");
 
 	
 	while(tok != NULL) {
 		filler(buf, tok, NULL, 0);
+		printf("tok -- %s\n", tok);
 		tok = strtok(NULL, " ");
 	}
-	(void) offset;
-	(void) fi;
-	filler(buf, ".", NULL, 0);
-	filler(buf, "..", NULL, 0);
-	filler(buf, "file1", NULL, 0);
+
+	if (resp.st == success) {
+		printf("in success\n");
+		log_msg(&strg, RAID1_MAIN, "readdir was successfull");
+	}
+	else if (resp.st < success)
+		log_msg(&strg, RAID1_MAIN, "readdir -- something went wrong");
+
+	// (void) offset;
+	// (void) fi;
+	// filler(buf, ".", NULL, 0);
+	// filler(buf, "..", NULL, 0);
+	// filler(buf, "file1", NULL, 0);
 
 	// printf("ls -- %s\n", resp.buff);
 
@@ -238,8 +259,9 @@ int main(int argc, char *argv[]) {
 	// printf("FREEE\n");
 	// printf("storage %s\n", argv[2]);
 
-	strg_info_t strg;
 	
+	// strg_global = &strg;
+
 	init_storage(argv[1], argv[2], &strg);
 
 	test_storage(&strg);
@@ -266,7 +288,7 @@ int main(int argc, char *argv[]) {
 	} else if (strg.strg.raid == RAID5) {
 		nrfs_oper = &nrfs5_oper;
 	}
-	fclose(log_file);
+	// fclose(log_file);
 	return fuse_main(argc, fuse_argv, nrfs_oper, NULL);
 	return 0;
 }

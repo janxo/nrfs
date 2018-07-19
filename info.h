@@ -16,7 +16,7 @@
 #define BUFF_len 4096
 
 
-typedef enum {success = 0, error = -1} status;
+typedef enum {success = 0, error = -1, done = 1} status;
 
 typedef enum {cmd_readdir, cmd_write} command;
 
@@ -35,14 +35,6 @@ typedef struct storage {
 	remote hotswap;
 } storage;
 
-// typedef struct info {
-// 	char errorlog[NAME_LEN];
-// 	char cache_size[16];
-// 	char cache_replacement[16];
-// 	int timeout;
-// 	int storage_count;
-// 	storage storages[MAX_STORAGES];
-// } info;
 
 
 typedef struct strg_info {
@@ -64,9 +56,7 @@ typedef struct file_info {
 typedef struct {
 	int raid;
 	command fn;
-	// char path[NAME_LEN];
 	file_info f_info;
-	// char buff[BUFF_len];
 } request_t;
 
 
