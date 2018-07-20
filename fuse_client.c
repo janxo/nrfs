@@ -25,6 +25,11 @@ int init_connection(strg_info_t *strg);
 char *get_time();
 void build_req(request_t *req, int raid, command cmd, char *path,
 							int padding_size, struct fuse_file_info *fi, int file_size);
+size_t get_f_size(int fd) {
+	struct stat st;
+	fstat(fd, &st);
+	return st.st_size;
+}
 
 int *socket_fds;
 strg_info_t strg;
@@ -134,6 +139,7 @@ void init(strg_info_t *strg) {
 
 static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi) {
+	printf("nfrfs1_readdir\n");
 	log_msg(&strg, RAID1_MAIN, "readdir");
 	request_t req;
 	response_t resp;
@@ -196,6 +202,7 @@ void build_req(request_t *req, int raid, command cmd, char *path,
 
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
 		      struct fuse_file_info *fi) {
+	printf("nrfs1_write\n");
 	request_t req;
 	req.raid = RAID1;
 	req.fn = cmd_write;
@@ -206,9 +213,9 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 	strcpy(req.f_info.path, path);
 	req.f_info.padding_size = 0;
 	req.f_info.flags = fi->flags; 
-	struct stat st;
-	fstat(fd, &st);
-	req.f_info.f_size = st.st_size;
+	// struct stat st;
+	// fstat(fd, &st);
+	req.f_info.f_size = get_f_size(fd);
 
 	write(sfd, &req, sizeof(request_t));
 
@@ -217,11 +224,19 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 }
 
 static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
+	printf("nrfs1_open\n");
+	// int res;
 
+	// res = open(path, O_CREAT);
+	// if (res == -1)
+	// 	return -errno;
+
+	// fi->fh = res;
 	return 0;
 }
 
 static int nrfs1_getattr(const char *path, struct stat *stbuf) {
+	printf("nrfs1_getattr\n");
 	int res = 0;
 
 	memset(stbuf, 0, sizeof(struct stat));
@@ -236,12 +251,128 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	return res;
 }
 
+static void* nrfs1_init(struct fuse_conn_info *conn) {
+	printf("nrfs1_init\n");
+
+	return NULL;
+}
+
+static void nrfs1_destroy(void* private_data) {
+	printf("nrfs1_destroy\n");
+}
+
+static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
+											 struct fuse_file_info* fi) {
+	printf("nrfs1_read\n");
+	// char file_name[64];
+	// strcpy(file_name, "read");
+	log_msg(&strg, RAID1_MAIN, "read");
+	request_t req;
+	// response_t resp;
+	req.raid = RAID1;
+	req.fn = cmd_read;
+
+	build_req(&req, RAID1, cmd_readdir, path, 0, fi, 0);
+	int sfd = socket_fds[RAID1_MAIN];
+	write(sfd, &req, sizeof(req));
+
+	return 0;
+}
+
+static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
+	printf("nrfs1_release\n");
+
+	return 0;
+}
+
+static int nrfs1_rename(const char *from, const char *to) {
+	printf("nrfs1_rename\n");
+
+	return 0;
+}
+
+static int nrfs1_unlink(const char* path) {
+	printf("nrfs1_unlink\n");
+
+	return 0;
+}
+
+static int nrfs1_rmdir(const char* path) {
+	printf("nrfs1_rmdir\n");
+
+	return 0;
+}
+
+
+static int nrfs1_mkdir(const char* path, mode_t mode) {
+	printf("nrfs1_mkdir\n");
+
+	return 0;
+}
+
+static int nrfs1_opendir(const char* path, struct fuse_file_info* fi) {
+	printf("nrfs1_opendir\n");
+
+	return 0;
+}
+
+static int nrfs1_releasedir(const char* path, struct fuse_file_info *fi) {
+	printf("nrfs1_releasedir\n");
+
+	return 0;
+}
+
+static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
+	printf("nrfs1_create\n");
+
+	return 0;
+}
+
+static int nrfs1_truncate(const char *path, off_t size) {
+	printf("nrfs1_truncate\n");
+
+	return 0;
+}
+
 static struct fuse_operations nrfs1_oper = {
-	.getattr	= nrfs1_getattr,
-	.readdir	= nrfs1_readdir,
-	.open		= nrfs1_open,
-	// .read		= nrfs1_read,
-	.write		= nrfs1_write,
+    .init        = nrfs1_init,
+    .destroy     = nrfs1_destroy,
+    .getattr     = nrfs1_getattr,
+ //    .fgetattr    = nrfs1_fgetattr,
+ //    .access      = nrfs1_access,
+ //    .readlink    = nrfs1_readlink,
+    .readdir     = nrfs1_readdir,
+ //    .mknod       = nrfs1_mknod,
+    .mkdir       = nrfs1_mkdir,
+ //    .symlink     = nrfs1_symlink,
+    .unlink      = nrfs1_unlink,
+    .rmdir       = nrfs1_rmdir,
+    .rename      = nrfs1_rename,
+ //    .link        = nrfs1_link,
+ //    .chmod       = nrfs1_chmod,
+ //    .chown       = nrfs1_chown,
+    .truncate    = nrfs1_truncate,
+ //    .ftruncate   = nrfs1_ftruncate,
+ //    .utimens     = nrfs1_utimens,
+    .create      = nrfs1_create,
+    .open        = nrfs1_open,
+    .read        = nrfs1_read,
+    .write       = nrfs1_write,
+ //    .statfs      = nrfs1_statfs,
+    .release     = nrfs1_release,
+    .opendir     = nrfs1_opendir,
+    .releasedir  = nrfs1_releasedir,
+ //    .fsync       = nrfs1_fsync,
+ //    .flush       = nrfs1_flush,
+ //    .fsyncdir    = nrfs1_fsyncdir,
+ //    .lock        = nrfs1_lock,
+ //    .bmap        = nrfs1_bmap,
+ //    .ioctl       = nrfs1_ioctl,
+ //    .poll        = nrfs1_poll,
+	// .setxattr    = nrfs1_setxattr,
+ //    .getxattr    = nrfs1_getxattr,
+ //    .listxattr   = nrfs1_listxattr,
+ //    .removexattr = nrfs1_removexattr,
 };
 
 

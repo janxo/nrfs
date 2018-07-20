@@ -18,7 +18,7 @@ char *storage_path;
 
 request_t req;
 
-void readdir1_handler(int cfd, void *buff) {
+static void readdir1_handler(int cfd, void *buff) {
     // response_t resp;
     
     status st;
@@ -30,7 +30,7 @@ void readdir1_handler(int cfd, void *buff) {
     int f_info_len = strlen(req->f_info.path);
     char *path = malloc(storage_path_len + f_info_len + 1);
     strcpy(path, storage_path);
-    strcpy(path+storage_path_len, req->f_info.path+1);
+    strcpy(path+storage_path_len, req->f_info.path);
     printf("new paths is -- %s\n", path);
     dp = opendir(path);
     free(path);
@@ -56,7 +56,9 @@ void readdir1_handler(int cfd, void *buff) {
 
 }
 
-void write1_handler(int cfd, void *buff) {
+
+
+static void write1_handler(int cfd, void *buff) {
 
 }
 
