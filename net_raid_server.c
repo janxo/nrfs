@@ -18,6 +18,15 @@ char *storage_path;
 
 request_t req;
 
+char *build_path(char *p1, char *p2) {
+    int p1_len = strlen(p1);
+    int p2_len = strlen(p2);
+    char *path = malloc(p1_len+p2_len+1);
+    strcpy(path, p1);
+    strcpy(path+p1_len, p2);
+    return path;
+}
+
 static void readdir1_handler(int cfd, void *buff) {
     // response_t resp;
     
@@ -26,11 +35,7 @@ static void readdir1_handler(int cfd, void *buff) {
     DIR *dp;
     struct dirent *de;
     printf("path is -- %s\n", req->f_info.path);
-    int storage_path_len = strlen(storage_path);
-    int f_info_len = strlen(req->f_info.path);
-    char *path = malloc(storage_path_len + f_info_len + 1);
-    strcpy(path, storage_path);
-    strcpy(path+storage_path_len, req->f_info.path);
+    char *path = build_path(storage_path, req->f_info.path);
     printf("new paths is -- %s\n", path);
     dp = opendir(path);
     free(path);
@@ -49,8 +54,8 @@ static void readdir1_handler(int cfd, void *buff) {
         write_len = writen(cfd, &space, sizeof(space));
         printf("wrote -- %d bytes\n", write_len);
     }
-    char enf = '\0';
-    write(cfd, &enf, sizeof(enf));
+    // char enf = '\0';
+    // write(cfd, &enf, sizeof(enf));
     printf("done\n");
     closedir(dp);
 
@@ -59,7 +64,16 @@ static void readdir1_handler(int cfd, void *buff) {
 
 
 static void write1_handler(int cfd, void *buff) {
-
+    request_t *req = (request_t *) buff;
+    status st;
+    char *path = build_path(storage_path, req->f_info.path);
+    FILE *f = fopen(path, "a");
+    if (f == NULL) {
+        st = error;
+    } else {
+        st = success;
+    }
+    write(cfd, &st, sizeof(status));
 }
 
 void client_handler(int cfd) {
@@ -76,11 +90,13 @@ void client_handler(int cfd) {
                 case cmd_readdir:
                     readdir1_handler(cfd, &req);
                     break;
+                case cmd_write:
+                    write1_handler(cfd, &req);
                 default:
                     break;
             }
         }
-        printf("sizeof request_t -- %d\n", sizeof(request_t));
+        printf("sizeof request_t -- %lu\n", sizeof(request_t));
         printf("data_size ---- %d\n", data_size);
         if (data_size <= 0) {
             printf("data size less than 0 -- %d\n", data_size);

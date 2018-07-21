@@ -18,7 +18,7 @@
 
 typedef enum {success = 0, error = -1, done = 1} status;
 
-typedef enum {cmd_readdir, cmd_read, cmd_write} command;
+typedef enum {cmd_getattr, cmd_readdir, cmd_read, cmd_write} command;
 
 
 typedef struct remote {

@@ -30,7 +30,7 @@ static void run_storage(char *config, char *diskname) {
 	} else if (pid == 0) {
 		char *args[4];
 		char exec_file[32];
-		strncpy(exec_file, FUSE_EXEC, sizeof(FUSE_EXEC));
+		strcpy(exec_file, FUSE_EXEC);
 		args[0] = exec_file;
 		args[1] = config;
 		args[2] = diskname;
