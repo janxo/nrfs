@@ -29,7 +29,7 @@ char *build_path(char *p1, char *p2) {
 
 static void readdir1_handler(int cfd, void *buff) {
     // response_t resp;
-    
+    printf("in readdir1_handler\n");
     status st;
     request_t *req = (request_t *) buff;
     DIR *dp;
@@ -56,7 +56,8 @@ static void readdir1_handler(int cfd, void *buff) {
     }
     // char enf = '\0';
     // write(cfd, &enf, sizeof(enf));
-    printf("done\n");
+    
+    printf("reddir1 done\n");
     closedir(dp);
 
 }
@@ -76,6 +77,21 @@ static void write1_handler(int cfd, void *buff) {
     write(cfd, &st, sizeof(status));
 }
 
+static void getattr1_handler(int cfd, void *buff) {
+    printf("IN GETATTR HANDLER\n");
+
+    request_t *req = (request_t *) buff;
+    struct stat stbuf;
+    char *path = build_path(storage_path, req->f_info.path);
+    printf("path -- %s\n", path);
+    status st = lstat(path, &stbuf);
+    writen(cfd, &st, sizeof(st));
+    writen(cfd, &stbuf, sizeof(stbuf));
+    printf("st_mode -- %d\n", stbuf.st_mode);
+    printf("sizeof stbuf -- %zu\n", sizeof(stbuf));
+    printf("getattr DONE\n");
+}
+
 void client_handler(int cfd) {
     printf("IN handler\n");
     // int buf[1024];
@@ -87,6 +103,9 @@ void client_handler(int cfd) {
         data_size = readn (cfd, &req, sizeof(request_t));
         if (req.raid == RAID1) {
             switch (req.fn) {
+                case cmd_getattr:
+                    getattr1_handler(cfd, &req);
+                    break;
                 case cmd_readdir:
                     readdir1_handler(cfd, &req);
                     break;

@@ -33,6 +33,7 @@ size_t get_f_size(int fd) {
 
 int *socket_fds;
 strg_info_t strg;
+FILE *log_file;
 
 // needed for fuse functions
 // for local functions strg arg is explicitly passed
@@ -69,19 +70,14 @@ char *get_time() {
 }
 
 void log_msg(strg_info_t *strg, int nth_server, char *msg) {
-	FILE *log_file = fopen(strg->errorlog, "a");
-		if (log_file == NULL) {
-			fprintf(stderr, "LOG FILE NOT FOUND\n");
-			return;
-		// exit(-1);
-	}
-
+	// log_file = fopen(strg->errorlog, "a");
 	remote *server = &strg->strg.servers[nth_server];
 	char *cur_time = get_time();
 	fprintf(log_file, "%s %s %s:%s %s\n", cur_time, strg->strg.diskname,
 								 server->ip_address, server->port, msg);
 	free(cur_time);
-	fclose(log_file);
+	fflush(log_file);
+	// fclose(log_file);
 }
 
 /** initialize connection to servers */
@@ -127,12 +123,11 @@ int init_connection(strg_info_t *strg) {
 
 
 void init(strg_info_t *strg) {
-	// log_file = fopen(strg->errorlog, "a");
-
-	// if (log_file == NULL) {
-	// 	fprintf(stderr, "LOG FILE NOT FOUND\n");
-	// 	exit(-1);
-	// }
+	log_file = fopen(strg->errorlog, "a");
+	if (log_file == NULL) {
+		fprintf(stderr, "LOG FILE NOT FOUND\n");
+		// exit(-1);
+	}
 	init_connection(strg);
 }
 
@@ -143,8 +138,6 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	log_msg(&strg, RAID1_MAIN, "readdir");
 	request_t req;
 	response_t resp;
-	req.raid = RAID1;
-	req.fn = cmd_readdir;
 
 	build_req(&req, RAID1, cmd_readdir, path, 0, fi, 0);
 	int sfd = socket_fds[RAID1_MAIN];
@@ -212,33 +205,38 @@ void build_req(request_t *req, int raid, command cmd, const char *path,
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
 		      struct fuse_file_info *fi) {
 	printf("nrfs1_write\n");
-	request_t req;
-	req.raid = RAID1;
-	req.fn = cmd_write;
+	// request_t req;
+	// req.raid = RAID1;
+	// req.fn = cmd_write;
 
-	build_req(&req, RAID1, cmd_write, path, 0, fi, 0);
-	// int fd = open(path, fi->flags);
-	int sfd = socket_fds[RAID1_MAIN];
+	// build_req(&req, RAID1, cmd_write, path, 0, fi, 0);
+	// // int fd = open(path, fi->flags);
+	// int sfd = socket_fds[RAID1_MAIN];
 
 
 	// struct stat st;
 	// fstat(fd, &st);
 	// req.f_info.f_size = get_f_size(fd);
 
-	write(sfd, &req, sizeof(request_t));
+	// write(sfd, &req, sizeof(request_t));
 	
-	status st;
+	// status st;
 	// get response from server
-	read(sfd, &st, sizeof(st));
+	// read(sfd, &st, sizeof(st));
 	// means that server is ready to accept file
-	if (st == success) {
+	// if (st == success) {
 		printf("size of write buffer is -- %lu\n", sizeof(buf));
 		printf("buffer is -- %s\n", buf);
 		printf("buff len -- %zu\n", strlen(buf));
-		write(sfd, buf, sizeof(buf));
-	}
+		printf("size is -- %zu\n", size);
+		printf("offset is -- %lu\n", offset);
+		fprintf(log_file, "buff len -- %zu\n", size);
+		fprintf(log_file, "buff -- %s\n", buf);
+	
+		// write(sfd, buf, sizeof(buf));
+	// }
 
-	return 0;
+	return size;
 }
 
 static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
@@ -255,18 +253,33 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 
 static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	printf("nrfs1_getattr\n");
-	int res = 0;
-
-	memset(stbuf, 0, sizeof(struct stat));
+	log_msg(&strg, RAID1_MAIN, "getattr");
 	if (strcmp(path, "/") == 0) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-	} else {
-		stbuf->st_mode = S_IFREG | 0444;
-		stbuf->st_nlink = 1;
+		return 0;
+	}
+	request_t req;
+	req.raid = RAID1;
+	req.fn = cmd_getattr;
+	strcpy(req.f_info.path, path);
+
+	int sfd = socket_fds[RAID1_MAIN];
+	writen(sfd, &req, sizeof(request_t));
+
+	status st;
+	readn(sfd, &st, sizeof(st));
+	if (st == error) {
+		printf("STATUS -- %d\n", st);
+		printf("errno -- %d\n", -errno);
+		return -errno;
 	}
 
-	return res;
+	readn(sfd, stbuf, sizeof(struct stat));
+	// printf("st_mode2 -- %d\n", stbuf->st_mode);
+	// printf("sizeof stbuf -- %zu\n", sizeof(struct stat));
+	// printf("nrfs1_getattr DONE\n");
+	return 0;
 }
 
 static void* nrfs1_init(struct fuse_conn_info *conn) {
@@ -351,6 +364,12 @@ static int nrfs1_truncate(const char *path, off_t size) {
 
 	return 0;
 }
+
+
+void cleanup() {
+	fclose(log_file);
+}
+
 
 static struct fuse_operations nrfs1_oper = {
     .init        = nrfs1_init,
@@ -450,6 +469,10 @@ int main(int argc, char *argv[]) {
 		nrfs_oper = &nrfs5_oper;
 	}
 	// fclose(log_file);
-	return fuse_main(argc, fuse_argv, nrfs_oper, NULL);
-	return 0;
+	int fuse_res = fuse_main(argc, fuse_argv, nrfs_oper, NULL);
+
+	cleanup();
+	printf("EXIT BOIIIIIIII\n");
+	return fuse_res;
+	
 }

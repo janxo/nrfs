@@ -2,6 +2,9 @@
 #define __info__
 
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 
 #define RAID1 1
 #define RAID5 5
