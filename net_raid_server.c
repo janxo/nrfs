@@ -66,7 +66,9 @@ static void readdir1_handler(int cfd, void *buff) {
         // write_len = writen(cfd, &delimiter, sizeof(delimiter));
         // printf("wrote -- %d bytes\n", write_len);
     }
-    resp.packet_size = index + sizeof(resp.st) + sizeof(resp.packet_size);
+    int resp_base_size = ((char*) &resp.buff - (char*) &resp);
+    resp.packet_size = index + resp_base_size;
+    
     // printf("indxex -- %d\n", index);
     printf("about to send -- %d\n", resp.packet_size);
     write_len = writen(cfd, &resp, resp.packet_size);
