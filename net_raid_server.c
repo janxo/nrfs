@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -12,6 +14,8 @@
 #include "info.h"
 #define BACKLOG 10
 
+
+#define FUSE_BUFF_LEN 4096
 
 char *storage_path;
 
@@ -65,16 +69,36 @@ static void readdir1_handler(int cfd, void *buff) {
 
 
 static void write1_handler(int cfd, void *buff) {
+    printf("!!! IN WRITE HANDLER !!!\n");
     request_t *req = (request_t *) buff;
     status st;
+    st = 17;
+    struct stat stbuf;
     char *path = build_path(storage_path, req->f_info.path);
-    FILE *f = fopen(path, "a");
-    if (f == NULL) {
-        st = error;
-    } else {
-        st = success;
-    }
+    printf("file -- %s\n", path);
+
+    int fd = open(path, O_CREAT | O_RDWR | O_APPEND, 0644);
+    fstat(fd, &stbuf);
+    printf("file flags -- %d\n", stbuf.st_mode);
+    printf("fd -- %d\n", fd);
     write(cfd, &st, sizeof(status));
+    response_t resp;
+    printf("should be empty -- %s\n", resp.buff);
+    int read_n = read(cfd, resp.buff, req->f_info.f_size);
+    printf("read -- %d\n", read_n);
+    printf("received -- %s\n", resp.buff);
+
+    // when fuse sends files partially (happens on big files)
+    // it adds '\n' character on the last buffer so we need to not include it
+    if (read_n < FUSE_BUFF_LEN) {
+        read_n--;
+    }
+    int res = pwrite(fd, resp.buff, read_n, req->f_info.offset);
+    printf("res is -- %d\n", res);
+    close(fd);
+  
+    printf("!!! END WRITE HANDLER !!! \n");
+    
 }
 
 static void getattr1_handler(int cfd, void *buff) {
@@ -82,9 +106,25 @@ static void getattr1_handler(int cfd, void *buff) {
 
     request_t *req = (request_t *) buff;
     struct stat stbuf;
-    char *path = build_path(storage_path, req->f_info.path);
-    printf("path -- %s\n", path);
-    status st = lstat(path, &stbuf);
+    status st;
+    // root dir 
+    if (strcmp(req->f_info.path, "/") == 0) {
+        // somewhy fstat didn't work on current directory
+        st = lstat(storage_path, &stbuf);
+        printf("res -- %d\n", st);
+
+    } else {
+        char *path = build_path(storage_path, req->f_info.path);
+        printf("path -- %s\n", path);
+        int fd = open(path, O_CREAT, 0644);
+    // printf("fd -- %d\n", fd);
+    // status st = lstat(path, &stbuf);
+        st = fstat(fd, &stbuf);
+        free(path);
+        close(fd);
+    }
+    // file doesn't exist so signal client that it needs to be created
+
     writen(cfd, &st, sizeof(st));
     writen(cfd, &stbuf, sizeof(stbuf));
     printf("st_mode -- %d\n", stbuf.st_mode);
@@ -101,6 +141,8 @@ void client_handler(int cfd) {
     while (1) {
         printf("IN the loop\n");
         data_size = readn (cfd, &req, sizeof(request_t));
+        printf("sizeof request_t -- %lu\n", sizeof(request_t));
+        printf("data_size ---- %d\n", data_size);
         if (req.raid == RAID1) {
             switch (req.fn) {
                 case cmd_getattr:
@@ -121,11 +163,11 @@ void client_handler(int cfd) {
             printf("data size less than 0 -- %d\n", data_size);
             break;
         }
-        printf("raid is -- %d\n", req.raid);
-        printf("fn is -- %d\n", req.fn);
-        printf("path is -- %s\n", req.f_info.path);
-        printf("flags -- %d\n", req.f_info.flags);
-        printf("padding -- %d\n", req.f_info.padding_size);
+        // printf("raid is -- %d\n", req.raid);
+        // printf("fn is -- %d\n", req.fn);
+        // printf("path is -- %s\n", req.f_info.path);
+        // printf("flags -- %d\n", req.f_info.flags);
+        // printf("padding -- %d\n", req.f_info.padding_size);
         // printf("data is -- %s\n", req.buff);
         // write (cfd, &buf, data_size);
     }

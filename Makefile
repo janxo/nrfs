@@ -32,7 +32,7 @@ tst.o: tst.c
 rdwrn.o: rdwrn.c
 	$(CC) $(CFLAGS) rdwrn.c
 
-clean: unmount
+clean:
 	rm *o *log $(OUT)
 
 unmount: 

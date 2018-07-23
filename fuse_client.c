@@ -24,7 +24,7 @@ void init(strg_info_t *strg);
 int init_connection(strg_info_t *strg);
 char *get_time();
 void build_req(request_t *req, int raid, command cmd, const char *path,
-							int padding_size, struct fuse_file_info *fi, int file_size);
+							int padding_size, struct fuse_file_info *fi, size_t file_size, size_t offset);
 size_t get_f_size(int fd) {
 	struct stat st;
 	fstat(fd, &st);
@@ -139,7 +139,7 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	request_t req;
 	response_t resp;
 
-	build_req(&req, RAID1, cmd_readdir, path, 0, fi, 0);
+	build_req(&req, RAID1, cmd_readdir, path, 0, fi, 0, 0);
 	int sfd = socket_fds[RAID1_MAIN];
 	printf("in client before write\n");
 	write(sfd, &req, sizeof(request_t));
@@ -191,50 +191,40 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 
 void build_req(request_t *req, int raid, command cmd, const char *path,
-							int padding_size, struct fuse_file_info *fi, int file_size) {
+							int padding_size, struct fuse_file_info *fi, size_t file_size, size_t offset) {
 	req->raid = raid;
 	req->fn = cmd;
 	strcpy(req->f_info.path, path);
 	req->f_info.padding_size = padding_size;
 	req->f_info.flags = fi->flags;
 	req->f_info.f_size = file_size;
+	req->f_info.offset = offset;
 }
 
 
 
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
-		      struct fuse_file_info *fi) {
+														struct fuse_file_info *fi) {
 	printf("nrfs1_write\n");
-	// request_t req;
-	// req.raid = RAID1;
-	// req.fn = cmd_write;
+	request_t req;
+	req.raid = RAID1;
+	req.fn = cmd_write;
 
-	// build_req(&req, RAID1, cmd_write, path, 0, fi, 0);
-	// // int fd = open(path, fi->flags);
-	// int sfd = socket_fds[RAID1_MAIN];
+	build_req(&req, RAID1, cmd_write, path, 0, fi, size, offset);
+
+	int sfd = socket_fds[RAID1_MAIN];
 
 
-	// struct stat st;
-	// fstat(fd, &st);
-	// req.f_info.f_size = get_f_size(fd);
+	write(sfd, &req, sizeof(request_t));
+	printf("request sent\n");
 
-	// write(sfd, &req, sizeof(request_t));
-	
-	// status st;
+	status st = error;
+
 	// get response from server
-	// read(sfd, &st, sizeof(st));
-	// means that server is ready to accept file
-	// if (st == success) {
-		printf("size of write buffer is -- %lu\n", sizeof(buf));
-		printf("buffer is -- %s\n", buf);
-		printf("buff len -- %zu\n", strlen(buf));
-		printf("size is -- %zu\n", size);
-		printf("offset is -- %lu\n", offset);
-		fprintf(log_file, "buff len -- %zu\n", size);
-		fprintf(log_file, "buff -- %s\n", buf);
-	
-		// write(sfd, buf, sizeof(buf));
-	// }
+	read(sfd, &st, sizeof(status));
+	printf("status received -- %d\n", st);
+
+	write(sfd, buf, size);
 
 	return size;
 }
@@ -254,11 +244,7 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	printf("nrfs1_getattr\n");
 	log_msg(&strg, RAID1_MAIN, "getattr");
-	if (strcmp(path, "/") == 0) {
-		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
-		return 0;
-	}
+
 	request_t req;
 	req.raid = RAID1;
 	req.fn = cmd_getattr;
@@ -273,12 +259,14 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 		printf("STATUS -- %d\n", st);
 		printf("errno -- %d\n", -errno);
 		return -errno;
-	}
+	} 
 
 	readn(sfd, stbuf, sizeof(struct stat));
 	// printf("st_mode2 -- %d\n", stbuf->st_mode);
 	// printf("sizeof stbuf -- %zu\n", sizeof(struct stat));
-	// printf("nrfs1_getattr DONE\n");
+	printf("nrfs1_getattr DONE\n");
+
+
 	return 0;
 }
 

@@ -19,7 +19,7 @@
 #define BUFF_len 4096
 
 
-typedef enum {success = 0, error = -1, done = 1} status;
+typedef enum {success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
 
 typedef enum {cmd_getattr, cmd_readdir, cmd_read, cmd_write} command;
 
@@ -54,6 +54,7 @@ typedef struct file_info {
 	int flags;
 	int padding_size;
 	off_t f_size;
+	off_t offset;
 } file_info;
 
 typedef struct {
