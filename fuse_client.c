@@ -145,8 +145,12 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	write(sfd, &req, sizeof(request_t));
 
 	printf("after write\n");
-	int read_b = read(sfd, &resp, sizeof(resp));
-
+	int read_b = read(sfd, &resp.packet_size, sizeof(resp.packet_size));
+	printf("read %d bytes\n", read_b);
+	int left_to_read = resp.packet_size - sizeof(resp.packet_size);
+	printf("about to read -- %d bytes\n", left_to_read);
+	read_b = readn(sfd, &resp.st, left_to_read);
+	printf("received directories -- %s\n", resp.buff);
 	// means server fd was closed
 	if (read_b == 0) {
 		printf("SERVER DEAD\n");

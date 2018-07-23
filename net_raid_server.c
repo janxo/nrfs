@@ -33,7 +33,7 @@ char *build_path(char *p1, char *p2) {
 
 static void readdir1_handler(int cfd, void *buff) {
     // response_t resp;
-    printf("in readdir1_handler\n");
+    printf("!!! IN READDIR1 HANDLER !!! \n");
     status st;
     request_t *req = (request_t *) buff;
     DIR *dp;
@@ -43,25 +43,40 @@ static void readdir1_handler(int cfd, void *buff) {
     printf("new paths is -- %s\n", path);
     dp = opendir(path);
     free(path);
-    char space = ' ';
+    char delimiter = ' ';
     if (dp == NULL) {
         st = error;
     } else {
         st = success;
     }
-    write(cfd, &st, sizeof(status));
+    response_t resp;
+    
+    memcpy(&resp.st, &st, sizeof(status));
+    // write(cfd, &st, sizeof(status));
     int write_len = 0;
+    int index = 0;
     while ((de = readdir(dp)) != NULL) {
         printf("dir entry -- %s\n", de->d_name);
-        write_len = writen(cfd, de->d_name, strlen(de->d_name));
-        printf("wrote -- %d bytes\n", write_len);
-        write_len = writen(cfd, &space, sizeof(space));
-        printf("wrote -- %d bytes\n", write_len);
+        int dir_entry_len = strlen(de->d_name);
+        memcpy(resp.buff+index, de->d_name, dir_entry_len);
+        index += dir_entry_len;
+        resp.buff[index++] = delimiter;
+        // write_len = writen(cfd, de->d_name, strlen(de->d_name));
+        // printf("wrote -- %d bytes\n", write_len);
+        // write_len = writen(cfd, &delimiter, sizeof(delimiter));
+        // printf("wrote -- %d bytes\n", write_len);
     }
+    resp.packet_size = index + sizeof(resp.st) + sizeof(resp.packet_size);
+    // printf("indxex -- %d\n", index);
+    printf("about to send -- %d\n", resp.packet_size);
+    write_len = writen(cfd, &resp, resp.packet_size);
+    printf("sent -- %d\n", write_len);
+    printf("sending directories -- %s\n", resp.buff);
+    // printf("len -- %zu\n", strlen(resp.buff));
     // char enf = '\0';
     // write(cfd, &enf, sizeof(enf));
     
-    printf("reddir1 done\n");
+    printf("!!! READDIR1 DONE !!!\n");
     closedir(dp);
 
 }

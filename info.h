@@ -65,6 +65,7 @@ typedef struct {
 
 
 typedef struct {
+	int packet_size;
 	status st;
 	char buff[BUFF_len];
 } response_t;
