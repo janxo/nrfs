@@ -1,4 +1,5 @@
 #define FUSE_USE_VERSION 26
+#define _FILE_OFFSET_BITS  64
 
 #include <fuse.h>
 #include <stdio.h>
@@ -23,8 +24,8 @@
 void init(strg_info_t *strg);
 int init_connection(strg_info_t *strg);
 char *get_time();
-void build_req(request_t *req, int raid, command cmd, const char *path,
-							int padding_size, struct fuse_file_info *fi, size_t file_size, size_t offset);
+request_t *build_req(int raid, command cmd, const char *path,
+							int padding_size, struct fuse_file_info *fi, status st, size_t file_size, size_t offset);
 size_t get_f_size(int fd) {
 	struct stat st;
 	fstat(fd, &st);
@@ -34,6 +35,8 @@ size_t get_f_size(int fd) {
 int *socket_fds;
 strg_info_t strg;
 FILE *log_file;
+cache_file_t cached_file;
+request_t *write_req;
 
 // needed for fuse functions
 // for local functions strg arg is explicitly passed
@@ -123,6 +126,8 @@ int init_connection(strg_info_t *strg) {
 
 
 void init(strg_info_t *strg) {
+	cached_file.f_size = 0;
+	cached_file.file = NULL;
 	log_file = fopen(strg->errorlog, "a");
 	if (log_file == NULL) {
 		fprintf(stderr, "LOG FILE NOT FOUND\n");
@@ -136,13 +141,13 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi) {
 	printf("nfrfs1_readdir\n");
 	log_msg(&strg, RAID1_MAIN, "readdir");
-	request_t req;
+	request_t *req;
 	response_t resp;
 
-	build_req(&req, RAID1, cmd_readdir, path, 0, fi, 0, 0);
+	req = build_req(RAID1, cmd_readdir, path, 0, fi, unused, 0, 0);
 	int sfd = socket_fds[RAID1_MAIN];
 	printf("in client before write\n");
-	write(sfd, &req, sizeof(request_t));
+	write(sfd, req, sizeof(request_t));
 
 	printf("after write\n");
 	int read_b = read(sfd, &resp.packet_size, sizeof(resp.packet_size));
@@ -188,14 +193,15 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 	// printf("ls -- %s\n", resp.buff);
 
-
+	free(req);
 	return 0;
 }
 
 
 
-void build_req(request_t *req, int raid, command cmd, const char *path,
-							int padding_size, struct fuse_file_info *fi, size_t file_size, size_t offset) {
+request_t *build_req(int raid, command cmd, const char *path,
+							int padding_size, struct fuse_file_info *fi, status st, size_t file_size, size_t offset) {
+	request_t *req = malloc(sizeof(request_t));
 	req->raid = raid;
 	req->fn = cmd;
 	strcpy(req->f_info.path, path);
@@ -203,32 +209,134 @@ void build_req(request_t *req, int raid, command cmd, const char *path,
 	req->f_info.flags = fi->flags;
 	req->f_info.f_size = file_size;
 	req->f_info.offset = offset;
+	req->st = st;
+
+	return req;
 }
 
 
+static status send_file_to_server(int sfd, request_t *req, cache_file_t *cach_file, size_t chunk_size) {
+	
+	ssize_t numWritten;
+	size_t totWritten;
+	char *buf = cach_file->file;
+	req->f_info.offset = cach_file->offset;
+
+	for (totWritten = 0; totWritten < cach_file->f_size; ) {
+		size_t size = cach_file->f_size-totWritten;
+		if (size > chunk_size) {
+			size = chunk_size;
+			req->st = writing;
+		} else {
+			req->st = done;
+		}
+		req->f_info.f_size = size;
+		writen(sfd, req, sizeof(request_t));
+		numWritten = writen(sfd, buf, chunk_size);
+		
+		if (numWritten <= 0) {
+		if (numWritten == -1 && errno == EINTR)
+			continue;
+		else
+			return error;
+		}
+		req->f_info.offset += numWritten;
+		totWritten += numWritten;
+		buf += numWritten;
+	}
+	return success;
+
+}
 
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
 														struct fuse_file_info *fi) {
 	printf("nrfs1_write\n");
-	request_t req;
-	req.raid = RAID1;
-	req.fn = cmd_write;
+	bool is_last_packet = false;
+	size_t f_size = 0;
 
-	build_req(&req, RAID1, cmd_write, path, 0, fi, size, offset);
+	if (cached_file.file == NULL) {
 
-	int sfd = socket_fds[RAID1_MAIN];
+		cached_file.file = malloc(CACHED_FILE_MAX_LEN);
+		cached_file.offset = offset;
+
+		if (cached_file.file == NULL) {
+			printf("malloc failed\n");
+			return -1;
+		}
+
+		write_req = build_req(RAID1, cmd_write, path, 0, fi, writing, 0, 0);
+	}
+
+	// when fuse sends files partially (happens on big files)
+    // fuse  adds '\n' character buffer so we need to not include it
+	if (size != 0 && (size < FUSE_BUFF_LEN)) {
+		f_size = size-1;
+		is_last_packet = true;
+
+	} else {
+		f_size = size;
+	}
+
+	memcpy(cached_file.file+cached_file.f_size, buf, f_size);
+	cached_file.f_size += f_size;
+
+	if (is_last_packet) {
+		send_file_to_server(socket_fds[RAID1_MAIN], write_req, &cached_file, FUSE_BUFF_LEN);
+	}
+
+	
+	// request_t req;
+	// req.raid = RAID1;
+	// req.fn = cmd_write;
+	// int sfd = socket_fds[RAID1_MAIN];
+	// bool is_last_packet = false;
+	// size_t f_size = 0;
+
+	// // when fuse sends files partially (happens on big files)
+ //    // fuse  adds '\n' character buffer so we need to not include it
+ //    if (size != 0 && (size < FUSE_BUFF_LEN)) {
+ //        f_size = size-1;
+ //        is_last_packet = true;
+ //    } else {
+ //    	f_size = size;
+ //    }
+
+ //    status st = writing;
+ //    if (is_last_packet) st = done;
+
+	// printf("size is -- %zu\n", f_size);
+	// printf("returning -- %zu\n", size);
 
 
-	write(sfd, &req, sizeof(request_t));
-	printf("request sent\n");
+	// write(sfd, &req, sizeof(request_t));
+	// printf("request sent\n");
 
-	status st = error;
 
-	// get response from server
-	read(sfd, &st, sizeof(status));
-	printf("status received -- %d\n", st);
 
-	write(sfd, buf, size);
+	// write(sfd, buf, f_size);
+	// if (cached_file.f_size == 0) {
+	// 	cached_file.file = malloc(CACHED_FILE_MAX_LEN);
+	// 	cached_file.offset = offset;
+
+	// 	if (cached_file.file == NULL) {
+	// 		printf("malloc failed\n");
+	// 	}
+	// }
+
+	// memcpy(cached_file.file+cached_file.f_size, buf, f_size);
+	// cached_file.f_size += f_size;
+
+	// status write_success = error;
+
+	// int res = read(sfd, &write_success, sizeof(status));
+
+	// if (write_success == success) {
+	// 	printf("SERVER1 DONE WRITING\n");
+
+	// }
+
+	// cached_file.file[cached_file.f_size] = '\0';
+	// printf("wrote -- %s\n", cached_file.file);
 
 	return size;
 }

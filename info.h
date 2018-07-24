@@ -4,11 +4,14 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 
 #define RAID1 1
 #define RAID5 5
 #define RAID1_MAIN 0
+
+#define FUSE_BUFF_LEN 4096
 
 #define NAME_LEN 64
 #define MAX_SERVERS 16
@@ -16,10 +19,11 @@
 #define ADDR_LEN 32
 #define PORT_LEN 8
 #define CACHE_LEN 10
-#define BUFF_len 4096
+#define BUFF_len 32768	//32KB
+// #define CACHED_FILE_MAX_LEN 0x40000000	//1GB
+#define CACHED_FILE_MAX_LEN 0x8000000 //128MB
 
-
-typedef enum {success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
+typedef enum {unused = -50, success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
 
 typedef enum {cmd_getattr, cmd_readdir, cmd_read, cmd_write} command;
 
@@ -60,6 +64,7 @@ typedef struct file_info {
 typedef struct {
 	int raid;
 	command fn;
+	status st;
 	file_info f_info;
 } request_t;
 
@@ -71,6 +76,10 @@ typedef struct {
 } response_t;
 
 
-
+typedef struct {
+	size_t f_size;
+	off_t offset;
+	char *file;
+} cache_file_t;
 
 #endif

@@ -37,7 +37,7 @@ ssize_t writen(int fd, void *buffer, size_t n) {
 	printf("!!! IN WRITEN !!!\n");
 	ssize_t numWritten;
 	size_t totWritten;
-	const char *buf;
+	char *buf;
 
 	buf = buffer;
 	for (totWritten = 0; totWritten < n; ) {
