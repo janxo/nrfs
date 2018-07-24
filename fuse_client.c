@@ -127,6 +127,7 @@ int init_connection(strg_info_t *strg) {
 
 void init(strg_info_t *strg) {
 	cached_file.f_size = 0;
+	cached_file.offset = 0;
 	cached_file.file = NULL;
 	log_file = fopen(strg->errorlog, "a");
 	if (log_file == NULL) {
@@ -147,9 +148,9 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	req = build_req(RAID1, cmd_readdir, path, 0, fi, unused, 0, 0);
 	int sfd = socket_fds[RAID1_MAIN];
 	printf("in client before write\n");
-	write(sfd, req, sizeof(request_t));
+	int wrote = write(sfd, req, sizeof(request_t));
 
-	printf("after write\n");
+	printf("after write, written -- %d\n", wrote);
 	int read_b = read(sfd, &resp.packet_size, sizeof(resp.packet_size));
 	printf("read %d bytes\n", read_b);
 	int left_to_read = resp.packet_size - sizeof(resp.packet_size);
@@ -221,8 +222,10 @@ static status send_file_to_server(int sfd, request_t *req, cache_file_t *cach_fi
 	size_t totWritten;
 	char *buf = cach_file->file;
 	req->f_info.offset = cach_file->offset;
-
+	int counter = 0;
 	for (totWritten = 0; totWritten < cach_file->f_size; ) {
+		printf("\n IN writen count is -- %d\n\n", counter);
+		counter++;
 		size_t size = cach_file->f_size-totWritten;
 		if (size > chunk_size) {
 			size = chunk_size;
@@ -232,7 +235,7 @@ static status send_file_to_server(int sfd, request_t *req, cache_file_t *cach_fi
 		}
 		req->f_info.f_size = size;
 		writen(sfd, req, sizeof(request_t));
-		numWritten = writen(sfd, buf, chunk_size);
+		numWritten = writen(sfd, buf, size);
 		
 		if (numWritten <= 0) {
 		if (numWritten == -1 && errno == EINTR)
@@ -248,95 +251,77 @@ static status send_file_to_server(int sfd, request_t *req, cache_file_t *cach_fi
 
 }
 
+
+void free_cached(cache_file_t *cach_file) {
+	cach_file->f_size = 0;
+	cach_file->offset = 0;
+	free(cach_file->file);
+	cach_file->file = NULL;
+}
+
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
 														struct fuse_file_info *fi) {
 	printf("nrfs1_write\n");
 	bool is_last_packet = false;
-	size_t f_size = 0;
 
 	if (cached_file.file == NULL) {
 
 		cached_file.file = malloc(CACHED_FILE_MAX_LEN);
-		cached_file.offset = offset;
-
+		
 		if (cached_file.file == NULL) {
 			printf("malloc failed\n");
 			return -1;
 		}
 
-		write_req = build_req(RAID1, cmd_write, path, 0, fi, writing, 0, 0);
-	}
+		cached_file.offset = offset;
 
-	// when fuse sends files partially (happens on big files)
-    // fuse  adds '\n' character buffer so we need to not include it
+		write_req = build_req(RAID1, cmd_write, path, 0, fi, writing, size, offset);
+	}
+    
+
 	if (size != 0 && (size < FUSE_BUFF_LEN)) {
-		f_size = size-1;
 		is_last_packet = true;
 
-	} else {
-		f_size = size;
-	}
+	} 
 
-	memcpy(cached_file.file+cached_file.f_size, buf, f_size);
-	cached_file.f_size += f_size;
+	memcpy(cached_file.file+cached_file.f_size, buf, size);
+	cached_file.f_size += size;
 
 	if (is_last_packet) {
-		send_file_to_server(socket_fds[RAID1_MAIN], write_req, &cached_file, FUSE_BUFF_LEN);
+		printf("should write file -- %zu\n", cached_file.f_size);
+		int sfd0 = socket_fds[RAID1_MAIN];
+		send_file_to_server(sfd0, write_req, &cached_file, FUSE_BUFF_LEN);
+
+		status st;
+		readn(sfd0, &st, sizeof(status));
+
+		printf("file write done with status -- %d\n", st);
+
+		if (st == success) {
+			int sfd1 = socket_fds[1];
+			send_file_to_server(sfd1, write_req, &cached_file, FUSE_BUFF_LEN);
+		}
+
+		free(write_req);
+		write_req = NULL;
+		free_cached(&cached_file);
 	}
 
+
+	// cachef_file.file
 	
-	// request_t req;
-	// req.raid = RAID1;
-	// req.fn = cmd_write;
+	// request_t *req;
 	// int sfd = socket_fds[RAID1_MAIN];
-	// bool is_last_packet = false;
-	// size_t f_size = 0;
+ //    req = build_req(RAID1, cmd_write, path, 0, fi, writing, size, offset);
 
-	// // when fuse sends files partially (happens on big files)
- //    // fuse  adds '\n' character buffer so we need to not include it
- //    if (size != 0 && (size < FUSE_BUFF_LEN)) {
- //        f_size = size-1;
- //        is_last_packet = true;
- //    } else {
- //    	f_size = size;
- //    }
-
- //    status st = writing;
- //    if (is_last_packet) st = done;
-
-	// printf("size is -- %zu\n", f_size);
+	// // printf("size is -- %zu\n", f_size);
 	// printf("returning -- %zu\n", size);
 
-
-	// write(sfd, &req, sizeof(request_t));
+	// write(sfd, req, sizeof(request_t));
 	// printf("request sent\n");
 
+	// write(sfd, buf, size);
 
-
-	// write(sfd, buf, f_size);
-	// if (cached_file.f_size == 0) {
-	// 	cached_file.file = malloc(CACHED_FILE_MAX_LEN);
-	// 	cached_file.offset = offset;
-
-	// 	if (cached_file.file == NULL) {
-	// 		printf("malloc failed\n");
-	// 	}
-	// }
-
-	// memcpy(cached_file.file+cached_file.f_size, buf, f_size);
-	// cached_file.f_size += f_size;
-
-	// status write_success = error;
-
-	// int res = read(sfd, &write_success, sizeof(status));
-
-	// if (write_success == success) {
-	// 	printf("SERVER1 DONE WRITING\n");
-
-	// }
-
-	// cached_file.file[cached_file.f_size] = '\0';
-	// printf("wrote -- %s\n", cached_file.file);
 
 	return size;
 }

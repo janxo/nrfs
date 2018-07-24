@@ -86,28 +86,23 @@ static void readdir1_handler(int cfd, void *buff) {
 static void write1_handler(int cfd, void *buff) {
     printf("!!! IN WRITE HANDLER !!!\n");
     request_t *req = (request_t *) buff;
-    // status st;
-    // st = 17;
+
     struct stat stbuf;
     char *path = build_path(storage_path, req->f_info.path);
     printf("file -- %s\n", path);
 
-    int fd = open(path, req->f_info.flags, 0644);
-    fstat(fd, &stbuf);
-    printf("file flags -- %d\n", stbuf.st_mode);
+    int fd = open(path, req->f_info.flags | O_CREAT, 0644);
+    printf("err -- %d\n", errno);
     printf("fd -- %d\n", fd);
-    // write(cfd, &st, sizeof(status));
+    fstat(fd, &stbuf);
+    printf("file mode -- %d\n", stbuf.st_mode);
+    printf("file flags --%d\n", req->f_info.flags);
     response_t resp;
     printf("should be empty -- %s\n", resp.buff);
     int read_n = read(cfd, resp.buff, req->f_info.f_size);
     printf("read -- %d\n", read_n);
     printf("received -- %s\n", resp.buff);
 
-    // when fuse sends files partially (happens on big files)
-    // it adds '\n' character on the last buffer so we need to not include it
-    // if (read_n < FUSE_BUFF_LEN) {
-    //     read_n--;
-    // }
     int res = pwrite(fd, resp.buff, read_n, req->f_info.offset);
     printf("res is -- %d\n", res);
     close(fd);
