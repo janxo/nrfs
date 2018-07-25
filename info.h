@@ -6,11 +6,15 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <assert.h>
 
 
 #define RAID1 1
 #define RAID5 5
 #define RAID1_MAIN 0
+#define RAID1_REPLICANT 1
+
+#define SWAP_FILE ".swap"
 
 #define FUSE_BUFF_LEN 4096
 

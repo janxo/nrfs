@@ -98,7 +98,7 @@ static void write1_handler(int cfd, void *buff) {
     printf("file mode -- %d\n", stbuf.st_mode);
     printf("file flags --%d\n", req->f_info.flags);
     response_t resp;
-    printf("should be empty -- %s\n", resp.buff);
+    printf("status received -- %d\n", req->st);
     int read_n = read(cfd, resp.buff, req->f_info.f_size);
     printf("read -- %d\n", read_n);
     printf("received -- %s\n", resp.buff);
@@ -108,13 +108,16 @@ static void write1_handler(int cfd, void *buff) {
     close(fd);
     
     // last packet of file
-    status write_success = writing;
+    
     if (req->st == done) {
-        write_success = success;
+       status write_success = done;
+        printf("status sent -- %d\n", write_success);
+        
+        // notify client whether file write is done or still going
+        writen(cfd, &write_success, sizeof(status));
     }
-    // notify client whether file write is done or still going
-    writen(cfd, &write_success, sizeof(status));
-
+ 
+    
     printf("!!! END WRITE HANDLER !!! \n");
     
 }

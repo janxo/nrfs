@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/stat.h>
+#include <sys/sendfile.h>
 #include "rdwrn.h"
 #include "info.h"
 #include "parse.h"
@@ -37,6 +38,7 @@ strg_info_t strg;
 FILE *log_file;
 cache_file_t cached_file;
 request_t *write_req;
+int swap_file_fd = -1;
 
 // needed for fuse functions
 // for local functions strg arg is explicitly passed
@@ -186,14 +188,6 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	else if (resp.st < success)
 		log_msg(&strg, RAID1_MAIN, "readdir -- something went wrong");
 
-	// (void) offset;
-	// (void) fi;
-	// filler(buf, ".", NULL, 0);
-	// filler(buf, "..", NULL, 0);
-	// filler(buf, "file1", NULL, 0);
-
-	// printf("ls -- %s\n", resp.buff);
-
 	free(req);
 	return 0;
 }
@@ -216,11 +210,32 @@ request_t *build_req(int raid, command cmd, const char *path,
 }
 
 
-static status send_file_to_server(int sfd, request_t *req, cache_file_t *cach_file, size_t chunk_size) {
+
+void free_cached(cache_file_t *cach_file) {
+	cach_file->f_size = 0;
+	cach_file->offset = 0;
+	if (cach_file->file != NULL) {
+		free(cach_file->file);
+		cach_file->file = NULL;
+	}
+}
+
+
+
+
+static status send_file(int sfd, int fd, request_t *req, cache_file_t *cach_file, size_t chunk_size) {
+
+	struct stat stbuf;
+	fstat(fd, &stbuf);
+	printf("cache_size -- %zu\n", cach_file->f_size);
+	printf("st_buf_size -- %zu\n", stbuf.st_size);
+	printf("swap_fd -- %d\n", fd);
+	assert(stbuf.st_size == cach_file->f_size);
 	
-	ssize_t numWritten;
+	ssize_t numWritten = 0;
 	size_t totWritten;
-	char *buf = cach_file->file;
+
+
 	req->f_info.offset = cach_file->offset;
 	int counter = 0;
 	for (totWritten = 0; totWritten < cach_file->f_size; ) {
@@ -233,98 +248,82 @@ static status send_file_to_server(int sfd, request_t *req, cache_file_t *cach_fi
 		} else {
 			req->st = done;
 		}
+
 		req->f_info.f_size = size;
+		printf("req status -- %d\n", req->st);
 		writen(sfd, req, sizeof(request_t));
-		numWritten = writen(sfd, buf, size);
+		numWritten = sendfile(sfd, fd, NULL, size);
+		printf("sent -- %zu\n", numWritten);
 		
 		if (numWritten <= 0) {
-		if (numWritten == -1 && errno == EINTR)
-			continue;
-		else
-			return error;
+			if (numWritten == -1 && errno == EINTR)
+				continue;
+			else
+				return error;
 		}
 		req->f_info.offset += numWritten;
 		totWritten += numWritten;
-		buf += numWritten;
 	}
 	return success;
-
 }
 
 
-void free_cached(cache_file_t *cach_file) {
-	cach_file->f_size = 0;
-	cach_file->offset = 0;
-	free(cach_file->file);
-	cach_file->file = NULL;
-}
 
+/** 
+ * accumulates data in swap file. if it's last chunk sends data first to main server
+ * and when receives status 'done' sends data to the replicant server
+ */
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
 														struct fuse_file_info *fi) {
 	printf("nrfs1_write\n");
+
 	bool is_last_packet = false;
 
-	if (cached_file.file == NULL) {
-
-		cached_file.file = malloc(CACHED_FILE_MAX_LEN);
-		
-		if (cached_file.file == NULL) {
-			printf("malloc failed\n");
-			return -1;
-		}
-
+	if (cached_file.f_size == 0) {
 		cached_file.offset = offset;
-
+		swap_file_fd = open(SWAP_FILE, O_CREAT|O_RDWR|O_APPEND, 0644);
 		write_req = build_req(RAID1, cmd_write, path, 0, fi, writing, size, offset);
 	}
-    
 
 	if (size != 0 && (size < FUSE_BUFF_LEN)) {
 		is_last_packet = true;
 
 	} 
 
-	memcpy(cached_file.file+cached_file.f_size, buf, size);
+	pwrite(swap_file_fd, buf, size, offset);
 	cached_file.f_size += size;
 
 	if (is_last_packet) {
-		printf("should write file -- %zu\n", cached_file.f_size);
 		int sfd0 = socket_fds[RAID1_MAIN];
-		send_file_to_server(sfd0, write_req, &cached_file, FUSE_BUFF_LEN);
+		printf("should write file -- %zu\n", cached_file.f_size);
 
-		status st;
+		send_file(sfd0, swap_file_fd, write_req, &cached_file, FUSE_BUFF_LEN);
+
+		status st = unused;
 		readn(sfd0, &st, sizeof(status));
 
 		printf("file write done with status -- %d\n", st);
 
-		if (st == success) {
-			int sfd1 = socket_fds[1];
-			send_file_to_server(sfd1, write_req, &cached_file, FUSE_BUFF_LEN);
+		// reset file pointer to head
+		lseek(swap_file_fd, SEEK_SET, 0);
+		
+		if (st == done) {
+			int sfd1 = socket_fds[RAID1_REPLICANT];
+			send_file(sfd1, swap_file_fd, write_req, &cached_file, FUSE_BUFF_LEN);
 		}
 
+		// free resources
 		free(write_req);
 		write_req = NULL;
 		free_cached(&cached_file);
+		close(swap_file_fd);
+		unlink(SWAP_FILE);
 	}
-
-
-	// cachef_file.file
-	
-	// request_t *req;
-	// int sfd = socket_fds[RAID1_MAIN];
- //    req = build_req(RAID1, cmd_write, path, 0, fi, writing, size, offset);
-
-	// // printf("size is -- %zu\n", f_size);
-	// printf("returning -- %zu\n", size);
-
-	// write(sfd, req, sizeof(request_t));
-	// printf("request sent\n");
-
-	// write(sfd, buf, size);
 
 
 	return size;
 }
+
 
 static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 	printf("nrfs1_open\n");
