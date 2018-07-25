@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <assert.h>
+#include <openssl/md5.h>
 
 
 #define RAID1 1
@@ -32,6 +33,10 @@ typedef enum {unused = -50, success = 0, error = -1, done = 1 , writing = 2, fil
 
 typedef enum {cmd_getattr, cmd_readdir, cmd_read, cmd_write} command;
 
+
+typedef struct {
+	unsigned char hash[MD5_DIGEST_LENGTH*2+1];
+} md5_t;
 
 typedef struct remote {
 	char ip_address[ADDR_LEN];
@@ -64,6 +69,7 @@ typedef struct file_info {
 	int padding_size;
 	off_t f_size;
 	off_t offset;
+	md5_t md5;
 } file_info;
 
 typedef struct {
@@ -86,5 +92,7 @@ typedef struct {
 	off_t offset;
 	char *file;
 } cache_file_t;
+
+
 
 #endif

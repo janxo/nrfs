@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <dirent.h>
+#include <sys/xattr.h>
 #include "rdwrn.h"
 #include "info.h"
 #define BACKLOG 10
@@ -105,19 +106,24 @@ static void write1_handler(int cfd, void *buff) {
 
     int res = pwrite(fd, resp.buff, read_n, req->f_info.offset);
     printf("res is -- %d\n", res);
-    close(fd);
+    
     
     // last packet of file
-    
     if (req->st == done) {
-       status write_success = done;
-        printf("status sent -- %d\n", write_success);
-        
+        status write_success = done;
         // notify client whether file write is done or still going
         writen(cfd, &write_success, sizeof(status));
+
+        printf("status sent -- %d\n", write_success);
+        bool file_created = ((req->f_info.flags & O_CREAT) == O_CREAT);
+        int attr_flags = XATTR_REPLACE;
+        if (file_created) {
+            attr_flags = XATTR_CREATE;
+        }
+        fsetxattr(fd, "user.hash", req->f_info.md5.hash, strlen((const char*)req->f_info.md5.hash), attr_flags);
     }
  
-    
+    close(fd);
     printf("!!! END WRITE HANDLER !!! \n");
     
 }

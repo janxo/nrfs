@@ -15,6 +15,7 @@
 #include <arpa/inet.h>
 #include <sys/stat.h>
 #include <sys/sendfile.h>
+#include <sys/mman.h>
 #include "rdwrn.h"
 #include "info.h"
 #include "parse.h"
@@ -44,7 +45,34 @@ int swap_file_fd = -1;
 // for local functions strg arg is explicitly passed
 strg_info_t *strg_global;
 
+void print_md5_sum(md5_t *md) {
+	int i;
+	for(i=0; i <MD5_DIGEST_LENGTH; i++) {
+		printf("%02x",md->hash[i]);
+ 	}
+}
 
+static void get_file_hash(int fd, size_t f_size, md5_t *md5) {
+	printf("\nABOUT TO CALCULATE HASH\n\n");
+	char *file_buffer;
+
+	file_buffer = mmap(0, f_size, PROT_READ, MAP_SHARED, fd, 0);
+	MD5((unsigned char*) file_buffer, f_size, md5->hash);
+	munmap(file_buffer, f_size);
+	print_md5_sum(md5);
+	char buff[128];
+	int i;
+	for(i=0; i <MD5_DIGEST_LENGTH; i++) {
+		sprintf(buff+i*2, "%02x",md5->hash[i]);
+	}
+	printf("\n\n");
+	printf("\nmd5 is -- %s\n", buff);
+	printf("len is -- %zu\n", strlen(buff));
+	// printf("digest len -- %d\n", strlen());
+	memcpy(md5->hash, buff, 2*MD5_DIGEST_LENGTH);
+	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
+	printf("\nmd5 is -- %s\n", md5->hash);
+}
 
 char *get_time() {
 	time_t current_time;
@@ -269,6 +297,7 @@ static status send_file(int sfd, int fd, request_t *req, cache_file_t *cach_file
 
 
 
+
 /** 
  * accumulates data in swap file. if it's last chunk sends data first to main server
  * and when receives status 'done' sends data to the replicant server
@@ -296,7 +325,8 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 	if (is_last_packet) {
 		int sfd0 = socket_fds[RAID1_MAIN];
 		printf("should write file -- %zu\n", cached_file.f_size);
-
+		get_file_hash(swap_file_fd, cached_file.f_size, &write_req->f_info.md5);
+		// print_md5_sum(&write_req->f_info.hash);
 		send_file(sfd0, swap_file_fd, write_req, &cached_file, FUSE_BUFF_LEN);
 
 		status st = unused;
@@ -304,9 +334,10 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 
 		printf("file write done with status -- %d\n", st);
 
+
 		// reset file pointer to head
 		lseek(swap_file_fd, SEEK_SET, 0);
-		
+
 		if (st == done) {
 			int sfd1 = socket_fds[RAID1_REPLICANT];
 			send_file(sfd1, swap_file_fd, write_req, &cached_file, FUSE_BUFF_LEN);
@@ -452,6 +483,7 @@ static int nrfs1_truncate(const char *path, off_t size) {
 
 void cleanup() {
 	fclose(log_file);
+	unlink(SWAP_FILE);
 }
 
 

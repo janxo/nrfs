@@ -12,7 +12,7 @@ server: server.o rdwrn.o
 	$(CC) net_raid_server.o rdwrn.o -o net_raid_server
 
 fuse_client: client.o parse.o tst.o rdwrn.o
-	$(CC) -Wall fuse_client.c $(FUSE) parse.o rdwrn.o tst.o -o fuse_client
+	$(CC) -Wall fuse_client.c $(FUSE) parse.o rdwrn.o tst.o -o fuse_client -lcrypto
 
 parse: parse.o
 	$(CC) parse.o -o parse

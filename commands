@@ -1,2 +1,5 @@
 ./net_raid_server 127.0.0.1 10001 storage1_dir
 ./net_raid_server 127.0.0.1 10002 storage2_dir
+
+
+sudo apt-get install libssl-dev
