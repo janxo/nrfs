@@ -36,4 +36,4 @@ clean:
 	rm *o *log $(OUT)
 
 unmount: 
-	fusermount -u testdir1 && fusermount -u testdir2
+	fusermount -u testdir && fusermount -u testdir2

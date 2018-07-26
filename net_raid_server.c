@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <fcntl.h>
+#include <sys/sendfile.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -154,7 +155,7 @@ static void getattr1_handler(int cfd, void *buff) {
         printf("res is %d\n", res);
         write(cfd, &res, sizeof(res));
     }
-
+    printf("st size -- %zu\n", stbuf.st_size);
     free(path);
     printf("!!! GETATTR DONE !!! \n");
 }
@@ -172,6 +173,8 @@ static void create1_handler(int cfd, void *buff) {
     if (st == error) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
+    } else {
+        close(st);
     }
 
     free(path);
@@ -191,7 +194,10 @@ static void open1_handler(int cfd, void *buff) {
     if (st == error) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
+    } else {
+        close(st);
     }
+
 
     free(path);
 
@@ -284,17 +290,41 @@ static void mkdir1_handler(int cfd, void *buff) {
     printf("!!! MKDIR1 DONE !!!\n");
 }
 
+static void read1_handler(int cfd, void *buff) {
+    printf("!!! READ1 HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+
+    status st = open(path, req->f_info.flags);
+    writen(cfd, &st, sizeof(status));
+    printf("status -- %d\n", st);
+    printf("offset -- %lu\n", req->f_info.offset);
+    printf("should send -- %zu\n", req->f_info.f_size);
+    if (st == error) {
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
+    } else {
+        size_t sent = sendfile(cfd, st, &req->f_info.offset, req->f_info.f_size);
+        printf("sent -- %zu\n", sent);
+        close(st);
+    }
+
+
+
+    printf("!!! READ1 DONE !!!\n");
+}
 
 static void rmdir1_handler(int cfd, void *buff) {
     printf("!!! RMDIR1 HANDLER !!!\n");
 
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
-    printf("path0 -- %s\n", req->f_info.path);
-    printf("path1 -- %s\n", path);
+    // printf("path0 -- %s\n", req->f_info.path);
+    // printf("path1 -- %s\n", path);
     status st = rmdir(path);
-    printf("status -- %d\n", st);
-    writen(cfd, &st, sizeof(status));
+    // printf("status -- %d\n", st);
+        writen(cfd, &st, sizeof(status));
     if (st == error) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
@@ -304,6 +334,33 @@ static void rmdir1_handler(int cfd, void *buff) {
 
 
     printf("!!! RMDIR1 DONE !!!\n");
+}
+
+static void rename1_handler(int cfd, void *buff) {
+    printf("!!! RENAME1 HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+    char to[64];
+
+    size_t len;
+    readn(cfd, &len, sizeof(size_t));
+    readn(cfd, to, len);
+    char *new_name = build_path(storage_path, to);
+
+    // printf("path0 -- %s\n", path);
+    // printf("path1 -- %s\n", new_name);
+    status st = rename(path, new_name);
+    // printf("status -- %d\n", st);
+    writen(cfd, &st, sizeof(status));
+    if (st == error) {
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
+    }
+
+    free(path);
+    free(new_name);
+    printf("!!! RENAME1 DONE !!!\n");
 }
 
 void client_handler(int cfd) {
@@ -337,6 +394,9 @@ void client_handler(int cfd) {
                 case cmd_readdir:
                     readdir1_handler(cfd, &req);
                     break;
+                case cmd_read:
+                    read1_handler(cfd, &req);
+                    break;
                 case cmd_write:
                     write1_handler(cfd, &req);
                     break;
@@ -349,6 +409,8 @@ void client_handler(int cfd) {
                 case cmd_rmdir:
                     rmdir1_handler(cfd, &req);
                     break;
+                case cmd_rename:
+                    rename1_handler(cfd, &req);
                 default:
                     break;
             }

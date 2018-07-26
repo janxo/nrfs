@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include "rdwrn.h"
+#include <sys/sendfile.h>
 #include <stdio.h>
 
 
@@ -32,6 +33,24 @@ ssize_t readn(int fd, void *buffer, size_t n) {
 
 }
 
+size_t sendfilen(int out_fd, int in_fd, off_t offset, size_t count) {
+	ssize_t numWritten;
+	size_t totWritten;
+	printf("\nIN SENDFILEN !!! \n\n");
+	for (totWritten = 0; totWritten < count; ) {
+		numWritten = sendfile(out_fd, in_fd, &offset, count - totWritten);
+		printf("offset -- %lu\n", offset);
+		printf("size -- %zu\n", count);
+		if (numWritten <= 0) {
+		if (numWritten == -1 && errno == EINTR)
+			continue;
+		else
+			return -1;
+		}
+		totWritten += numWritten;
+	}
+	return totWritten;
+}
 
 ssize_t writen(int fd, void *buffer, size_t n) {
 	// printf("!!! IN WRITEN !!!\n");

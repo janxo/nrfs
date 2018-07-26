@@ -10,6 +10,7 @@
 #include <openssl/md5.h>
 
 
+
 #define RAID1 1
 #define RAID5 5
 #define RAID1_MAIN 0
@@ -26,13 +27,12 @@
 #define PORT_LEN 8
 #define CACHE_LEN 10
 #define BUFF_len 32768	//32KB
-// #define CACHED_FILE_MAX_LEN 0x40000000	//1GB
-#define CACHED_FILE_MAX_LEN 0x8000000 //128MB
+
 
 typedef enum {unused = -50, success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
 
 typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink, cmd_create,
-			 cmd_open, cmd_readdir, cmd_read, cmd_write, cmd_mkdir, cmd_rmdir} command;
+			 cmd_open, cmd_readdir, cmd_read, cmd_write, cmd_mkdir, cmd_rmdir, cmd_rename} command;
 
 
 typedef struct {
@@ -98,7 +98,6 @@ typedef struct {
 	mode_t mode;
 	char *file;
 } cache_file_t;
-
 
 
 #endif

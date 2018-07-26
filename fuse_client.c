@@ -42,6 +42,7 @@ request_t *write_req;
 int swap_file_fd = -1;
 bool file_created = false;
 
+
 // needed for fuse functions
 // for local functions strg arg is explicitly passed
 strg_info_t *strg_global;
@@ -390,7 +391,8 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 		free(req);
 		return -res;
 	}
-
+	// fi->fh = st;
+	printf("open was successful\n");
 	free(req);
 	return 0;
 }
@@ -422,8 +424,9 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	} 
 	// printf("st_mode2 -- %d\n", stbuf->st_mode);
 	// printf("sizeof stbuf -- %zu\n", sizeof(struct stat));
+	printf("st size -- %zu\n", stbuf->st_size);
 	printf("nrfs1_getattr DONE\n");
-
+	
 	free(req);
 	return 0;
 }
@@ -441,19 +444,44 @@ static void nrfs1_destroy(void* private_data) {
 static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 											 struct fuse_file_info* fi) {
 	printf("nrfs1_read\n");
-	// // char file_name[64];
-	// // strcpy(file_name, "read");
-	// log_msg(&strg, RAID1_MAIN, "read");
-	// request_t req;
-	// // response_t resp;
-	// req.raid = RAID1;
-	// req.fn = cmd_read;
+	request_t *req = build_req(RAID1, cmd_read, path, fi, unused, size, offset, 0);
+	req->f_info.flags = O_RDONLY;
 
-	// build_req(&req, RAID1, cmd_readdir, path, 0, fi, 0);
-	// int sfd = socket_fds[RAID1_MAIN];
-	// write(sfd, &req, sizeof(req));
+	int sfd0 = socket_fds[RAID1_MAIN];
+	writen(sfd0, req, sizeof(request_t));
 
-	return 0;
+	status st;
+	readn(sfd0, &st, sizeof(status));
+	printf("offset -- %lu\n", offset);
+	printf("shouldve read -- %zu\n", size);
+	size_t read_n = 0;
+	// TODO maybe try to read from second server
+	// this time it just retunrs with errno
+	if (st == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
+		free(req);
+	} else {
+		// TODO IMPLEMENT PARTIAL READ
+		int chunk_size = 400000;
+		char tmp[chunk_size];
+		printf("before read\n");
+		// read_n = pread(sfd0, buf, size, offset);
+		 // while (read_n != 0)
+		read_n = read(sfd0, tmp, size);
+		
+		printf("read -- %zu\n", read_n);
+		printf("tmp -- %s\n", tmp);
+		memcpy(buf, tmp, read_n);
+		if (read_n == -1) read_n = -errno;
+	}
+
+	free(req);
+
+	return read_n;
 }
 
 static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
@@ -462,11 +490,6 @@ static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
 	return 0;
 }
 
-static int nrfs1_rename(const char *from, const char *to) {
-	printf("nrfs1_rename\n");
-
-	return 0;
-}
 
 static int nrfs1_unlink(const char* path) {
 	printf("nrfs1_unlink\n");
@@ -575,6 +598,7 @@ static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi
 		return -res;
 	}
 
+
 	file_created = true;
 	free(req);
 	return 0;
@@ -623,9 +647,7 @@ static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 	printf("nrfs1_utimens\n");
 	request_t *req = build_req(RAID1, cmd_utimens, path, NULL, unused, 0, 0, 0);
 	req->f_info.mask = AT_SYMLINK_NOFOLLOW;
-	// printf("no follow -- %d\n", AT_SYMLINK_NOFOLLOW);
-	// printf("time0 --- %s\n", ctime(&(ts[0].tv_sec)));
-	// printf("time1 --- %s\n", ctime(&(ts[1].tv_sec)));
+
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 
@@ -650,6 +672,38 @@ static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 	return 0;
 }
 
+static int nrfs1_rename(const char *from, const char *to) {
+	printf("nrfs1_rename\n");
+
+	request_t *req = build_req(RAID1, cmd_rename, from, NULL, unused, 0, 0, 0);
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+
+	size_t len = strlen(to);
+
+	writen(sfd0, req, sizeof(request_t));
+	writen(sfd0, &len, sizeof(size_t));
+	write(sfd0, to, len);
+
+	writen(sfd1, req, sizeof(request_t));
+	writen(sfd1, &len, sizeof(size_t));
+	write(sfd1, to, len);
+
+	status stat;
+	readn(sfd0, &stat, sizeof(status));
+
+	if (stat == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
+	}
+
+	free(req);
+
+	return 0;
+}
 
 static struct fuse_operations nrfs1_oper = {
     .init        = nrfs1_init,
