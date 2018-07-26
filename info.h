@@ -31,7 +31,7 @@
 
 typedef enum {unused = -50, success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
 
-typedef enum {cmd_getattr, cmd_readdir, cmd_read, cmd_write} command;
+typedef enum {cmd_getattr, cmd_create, cmd_open, cmd_readdir, cmd_read, cmd_write} command;
 
 
 typedef struct {
@@ -66,10 +66,13 @@ typedef struct strg_info {
 typedef struct file_info {
 	char path[NAME_LEN];
 	int flags;
-	int padding_size;
+	int fd;
+	mode_t mode;
 	off_t f_size;
 	off_t offset;
+	size_t padding_size;
 	md5_t md5;
+	bool created;
 } file_info;
 
 typedef struct {
@@ -90,6 +93,7 @@ typedef struct {
 typedef struct {
 	size_t f_size;
 	off_t offset;
+	mode_t mode;
 	char *file;
 } cache_file_t;
 

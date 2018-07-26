@@ -91,13 +91,19 @@ static void write1_handler(int cfd, void *buff) {
     struct stat stbuf;
     char *path = build_path(storage_path, req->f_info.path);
     printf("file -- %s\n", path);
-
-    int fd = open(path, req->f_info.flags | O_CREAT, 0644);
+    // if (req->f_info.mode != 0) {
+    //     req->f_info.mode = 0644;
+    // }
+    if (req->f_info.created) {
+        printf("file created\n");
+    }
+    int fd = open(path, req->f_info.flags, req->f_info.mode);
     printf("err -- %d\n", errno);
     printf("fd -- %d\n", fd);
     fstat(fd, &stbuf);
-    printf("file mode -- %d\n", stbuf.st_mode);
+    printf("file mode -- %d\n", req->f_info.mode);
     printf("file flags --%d\n", req->f_info.flags);
+    printf("st_mode -- %d\n", stbuf.st_mode);
     response_t resp;
     printf("status received -- %d\n", req->st);
     int read_n = read(cfd, resp.buff, req->f_info.f_size);
@@ -115,12 +121,12 @@ static void write1_handler(int cfd, void *buff) {
         writen(cfd, &write_success, sizeof(status));
 
         printf("status sent -- %d\n", write_success);
-        bool file_created = ((req->f_info.flags & O_CREAT) == O_CREAT);
-        int attr_flags = XATTR_REPLACE;
-        if (file_created) {
-            attr_flags = XATTR_CREATE;
-        }
-        fsetxattr(fd, "user.hash", req->f_info.md5.hash, strlen((const char*)req->f_info.md5.hash), attr_flags);
+        // bool file_created = ((req->f_info.flags & O_CREAT) == O_CREAT);
+        // int attr_flags = XATTR_REPLACE;
+        // if (file_created) {
+        //     attr_flags = XATTR_CREATE;
+        // }
+        // fsetxattr(fd, "user.hash", req->f_info.md5.hash, strlen((const char*)req->f_info.md5.hash), attr_flags);
     }
  
     close(fd);
@@ -129,34 +135,42 @@ static void write1_handler(int cfd, void *buff) {
 }
 
 static void getattr1_handler(int cfd, void *buff) {
-    printf("IN GETATTR HANDLER\n");
+    printf("!!! IN GETATTR HANDLER !!! \n");
 
     request_t *req = (request_t *) buff;
     struct stat stbuf;
     status st;
-    // root dir 
-    if (strcmp(req->f_info.path, "/") == 0) {
-        // somewhy fstat didn't work on current directory
-        st = lstat(storage_path, &stbuf);
-        printf("res -- %d\n", st);
-
-    } else {
-        char *path = build_path(storage_path, req->f_info.path);
-        printf("path -- %s\n", path);
-        int fd = open(path, O_CREAT, 0644);
-    // printf("fd -- %d\n", fd);
-    // status st = lstat(path, &stbuf);
-        st = fstat(fd, &stbuf);
-        free(path);
-        close(fd);
-    }
-    // file doesn't exist so signal client that it needs to be created
+    char *path = build_path(storage_path, req->f_info.path);
+    st = lstat(path, &stbuf);
 
     writen(cfd, &st, sizeof(st));
     writen(cfd, &stbuf, sizeof(stbuf));
-    printf("st_mode -- %d\n", stbuf.st_mode);
-    printf("sizeof stbuf -- %zu\n", sizeof(stbuf));
-    printf("getattr DONE\n");
+    if (st == -1) {
+        printf("sizeof errno is -- %lu\n", sizeof(errno));
+        printf("error -- %d\n", errno);
+        int res = errno;
+        printf("res is %d\n", res);
+        write(cfd, &res, sizeof(res));
+    }
+
+    printf("!!! GETATTR DONE !!! \n");
+}
+
+
+static void create1_handler(int cfd, void *buff) {
+    printf("!!! IN CREATE1 HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+    status st = open(path, req->f_info.flags, 0644);
+
+    writen(cfd, &st, sizeof(status));
+    if (st == error) {
+        int res = error;
+        writen(cfd, &res, sizeof(res));
+    }
+
+    printf("!!! CREATE1 DONE !!! \n");
 }
 
 void client_handler(int cfd) {
@@ -174,6 +188,9 @@ void client_handler(int cfd) {
             switch (req.fn) {
                 case cmd_getattr:
                     getattr1_handler(cfd, &req);
+                    break;
+                case cmd_create:
+                    create1_handler(cfd, &req);
                     break;
                 case cmd_readdir:
                     readdir1_handler(cfd, &req);

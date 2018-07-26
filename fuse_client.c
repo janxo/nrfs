@@ -20,14 +20,14 @@
 #include "info.h"
 #include "parse.h"
 #include "tst.h"
+#include "fuse_client.h"
 
 
 
 void init(strg_info_t *strg);
 int init_connection(strg_info_t *strg);
 char *get_time();
-request_t *build_req(int raid, command cmd, const char *path,
-							int padding_size, struct fuse_file_info *fi, status st, size_t file_size, size_t offset);
+
 size_t get_f_size(int fd) {
 	struct stat st;
 	fstat(fd, &st);
@@ -40,6 +40,7 @@ FILE *log_file;
 cache_file_t cached_file;
 request_t *write_req;
 int swap_file_fd = -1;
+bool file_created = false;
 
 // needed for fuse functions
 // for local functions strg arg is explicitly passed
@@ -175,7 +176,7 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	request_t *req;
 	response_t resp;
 
-	req = build_req(RAID1, cmd_readdir, path, 0, fi, unused, 0, 0);
+	req = build_req(RAID1, cmd_readdir, path, fi, unused, 0, 0, 0);
 	int sfd = socket_fds[RAID1_MAIN];
 	printf("in client before write\n");
 	int wrote = write(sfd, req, sizeof(request_t));
@@ -223,17 +224,19 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 
 request_t *build_req(int raid, command cmd, const char *path,
-							int padding_size, struct fuse_file_info *fi, status st, size_t file_size, size_t offset) {
+							struct fuse_file_info *fi, status st, size_t file_size, off_t offset, size_t padding_size) {
 	request_t *req = malloc(sizeof(request_t));
 	req->raid = raid;
 	req->fn = cmd;
-	strcpy(req->f_info.path, path);
-	req->f_info.padding_size = padding_size;
-	req->f_info.flags = fi->flags;
-	req->f_info.f_size = file_size;
-	req->f_info.offset = offset;
-	req->st = st;
 
+	strcpy(req->f_info.path, path);
+	req->st = st;
+	if (fi != NULL) {
+		req->f_info.padding_size = padding_size;
+		req->f_info.flags = fi->flags;
+		req->f_info.f_size = file_size;
+		req->f_info.offset = offset;
+	}
 	return req;
 }
 
@@ -242,6 +245,7 @@ request_t *build_req(int raid, command cmd, const char *path,
 void free_cached(cache_file_t *cach_file) {
 	cach_file->f_size = 0;
 	cach_file->offset = 0;
+	cach_file->mode = 0;
 	if (cach_file->file != NULL) {
 		free(cach_file->file);
 		cach_file->file = NULL;
@@ -267,7 +271,7 @@ static status send_file(int sfd, int fd, request_t *req, cache_file_t *cach_file
 	req->f_info.offset = cach_file->offset;
 	int counter = 0;
 	for (totWritten = 0; totWritten < cach_file->f_size; ) {
-		printf("\n IN writen count is -- %d\n\n", counter);
+		printf("\nIn writen count is -- %d\n\n", counter);
 		counter++;
 		size_t size = cach_file->f_size-totWritten;
 		if (size > chunk_size) {
@@ -305,18 +309,23 @@ static status send_file(int sfd, int fd, request_t *req, cache_file_t *cach_file
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
 														struct fuse_file_info *fi) {
 	printf("nrfs1_write\n");
-
+	if (fi == NULL) {
+		printf("FI is NULL\n");
+	}	
+	printf("fi flags -- %d\n", fi->flags);
 	bool is_last_packet = false;
 
 	if (cached_file.f_size == 0) {
 		cached_file.offset = offset;
 		swap_file_fd = open(SWAP_FILE, O_CREAT|O_RDWR|O_APPEND, 0644);
-		write_req = build_req(RAID1, cmd_write, path, 0, fi, writing, size, offset);
+		write_req = build_req(RAID1, cmd_write, path, fi, writing, size, offset, 0);
+		write_req->f_info.created = file_created;
+		write_req->f_info.mode = cached_file.mode;
 	}
 
 	if (size != 0 && (size < FUSE_BUFF_LEN)) {
 		is_last_packet = true;
-
+		printf("size is -- %zu\n", size);
 	} 
 
 	pwrite(swap_file_fd, buf, size, offset);
@@ -338,6 +347,7 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 		// reset file pointer to head
 		lseek(swap_file_fd, SEEK_SET, 0);
 
+		// successfull write to main server thus we write on replicant server
 		if (st == done) {
 			int sfd1 = socket_fds[RAID1_REPLICANT];
 			send_file(sfd1, swap_file_fd, write_req, &cached_file, FUSE_BUFF_LEN);
@@ -349,6 +359,8 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 		free_cached(&cached_file);
 		close(swap_file_fd);
 		unlink(SWAP_FILE);
+		file_created = false;
+		printf("WRITE DONE\n");
 	}
 
 
@@ -358,13 +370,17 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 
 static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 	printf("nrfs1_open\n");
+	if (fi == NULL) {
+		printf("FI is NULL\n");
+	}
 	// int res;
 
-	// res = open(path, O_CREAT);
+	// res = open(path, fi->flags);
 	// if (res == -1)
 	// 	return -errno;
 
 	// fi->fh = res;
+
 	return 0;
 }
 
@@ -372,28 +388,32 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	printf("nrfs1_getattr\n");
 	log_msg(&strg, RAID1_MAIN, "getattr");
 
-	request_t req;
-	req.raid = RAID1;
-	req.fn = cmd_getattr;
-	strcpy(req.f_info.path, path);
+	request_t *req = build_req(RAID1, cmd_getattr, path, NULL, unused, 0, 0, 0);
 
 	int sfd = socket_fds[RAID1_MAIN];
-	writen(sfd, &req, sizeof(request_t));
+	writen(sfd, req, sizeof(request_t));
 
 	status st;
 	readn(sfd, &st, sizeof(st));
-	if (st == error) {
-		printf("STATUS -- %d\n", st);
-		printf("errno -- %d\n", -errno);
-		return -errno;
-	} 
+
 
 	readn(sfd, stbuf, sizeof(struct stat));
+
+	if (st == error) {
+		printf("STATUS -- %d\n", st);
+		
+		int res;
+		// printf("sizeof errno is -- %lu\n", sizeof(errno));
+		readn(sfd, &res, sizeof(res));
+		printf("errno -- %d\n", res);
+		free(req);
+		return -res;
+	} 
 	// printf("st_mode2 -- %d\n", stbuf->st_mode);
 	// printf("sizeof stbuf -- %zu\n", sizeof(struct stat));
 	printf("nrfs1_getattr DONE\n");
 
-
+	free(req);
 	return 0;
 }
 
@@ -470,7 +490,24 @@ static int nrfs1_releasedir(const char* path, struct fuse_file_info *fi) {
 
 static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
 	printf("nrfs1_create\n");
+	printf("mode -- %d\n", mode);
+	request_t *req = build_req(RAID1, cmd_create, path, fi, unused, 0, 0, 0);
+	cached_file.mode = mode;
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+	writen(sfd0, req, sizeof(request_t));
+	writen(sfd1, req, sizeof(request_t));
 
+	status st;
+	readn(sfd0, &st, sizeof(status));
+	if (st == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		return -res;
+		printf("error -- %d\n", -res);
+	}
+
+	file_created = true;
 	return 0;
 }
 
@@ -479,6 +516,8 @@ static int nrfs1_truncate(const char *path, off_t size) {
 
 	return 0;
 }
+
+
 
 
 void cleanup() {

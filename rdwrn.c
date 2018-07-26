@@ -5,7 +5,7 @@
 
 
 ssize_t readn(int fd, void *buffer, size_t n) {
-	printf("!!! IN READN !!!\n");
+	// printf("!!! IN READN !!!\n");
 	ssize_t numRead;
 	size_t totRead;
 	char *buf;
@@ -34,7 +34,7 @@ ssize_t readn(int fd, void *buffer, size_t n) {
 
 
 ssize_t writen(int fd, void *buffer, size_t n) {
-	printf("!!! IN WRITEN !!!\n");
+	// printf("!!! IN WRITEN !!!\n");
 	ssize_t numWritten;
 	size_t totWritten;
 	char *buf;
