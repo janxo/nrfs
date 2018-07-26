@@ -131,6 +131,7 @@ static void write1_handler(int cfd, void *buff) {
     }
  
     close(fd);
+    free(path);
     printf("!!! END WRITE HANDLER !!! \n");
     
 }
@@ -154,6 +155,7 @@ static void getattr1_handler(int cfd, void *buff) {
         write(cfd, &res, sizeof(res));
     }
 
+    free(path);
     printf("!!! GETATTR DONE !!! \n");
 }
 
@@ -163,13 +165,16 @@ static void create1_handler(int cfd, void *buff) {
 
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
-    status st = open(path, req->f_info.flags, 0644);
+    // printf("mode -- %d\n", req->f_info.mode);
+    status st = open(path, req->f_info.flags, req->f_info.mode);
 
     writen(cfd, &st, sizeof(status));
     if (st == error) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
     }
+
+    free(path);
 
     printf("!!! CREATE1 DONE !!! \n");
 }
@@ -188,6 +193,8 @@ static void open1_handler(int cfd, void *buff) {
         writen(cfd, &res, sizeof(res));
     }
 
+    free(path);
+
     printf("!!! OPEN1 DONE !!! \n");
 }
 
@@ -204,6 +211,7 @@ static void access1_handler(int cfd, void *buff) {
         writen(cfd, &res, sizeof(res));
     }
 
+    free(path);
     printf("!!! ACCESS1 DONE !!! \n");
 }
 
@@ -225,16 +233,77 @@ static void utimens1_handler(int cfd, void *buff) {
     // printf("actually read -- %d\n", read_n);
     // printf("no follow -- %d\n", req->f_info.mask);
 
-    status stat = utimensat(AT_FDCWD, path, ts, AT_SYMLINK_NOFOLLOW);
-    // printf("status -- %d\n", stat);
-    writen(cfd, &stat, sizeof(status));
+    status st = utimensat(AT_FDCWD, path, ts, AT_SYMLINK_NOFOLLOW);
+    // printf("stus -- %d\n", st);
+    writen(cfd, &st, sizeof(status));
 
-    if (stat == error) {
+    if (st == error) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
     }
 
+    free(path);
     printf("!!! UTIMENS1 DONE !!! \n");
+}
+
+static void unlink1_handler(int cfd, void *buff) {
+    printf("!!! UNLINK1 HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+
+    status st = unlink(path);
+    writen(cfd, &st, sizeof(status));
+
+    if (st == error) {
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
+    }
+
+    free(path);
+    printf("!!! UNLINK1 DONE !!!\n");
+}
+
+
+static void mkdir1_handler(int cfd, void *buff) {
+    printf("!!! MKDIR1 HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+    // printf("path0 -- %s\n", req->f_info.path);
+    // printf("path1 -- %s\n", path);
+    status st = mkdir(path, req->f_info.mode);
+
+    writen(cfd, &st, sizeof(status));
+    if (st == error) {
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
+    }
+
+    free(path);
+    printf("!!! MKDIR1 DONE !!!\n");
+}
+
+
+static void rmdir1_handler(int cfd, void *buff) {
+    printf("!!! RMDIR1 HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+    printf("path0 -- %s\n", req->f_info.path);
+    printf("path1 -- %s\n", path);
+    status st = rmdir(path);
+    printf("status -- %d\n", st);
+    writen(cfd, &st, sizeof(status));
+    if (st == error) {
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
+    }
+
+    free(path);
+
+
+    printf("!!! RMDIR1 DONE !!!\n");
 }
 
 void client_handler(int cfd) {
@@ -270,6 +339,16 @@ void client_handler(int cfd) {
                     break;
                 case cmd_write:
                     write1_handler(cfd, &req);
+                    break;
+                case cmd_unlink:
+                    unlink1_handler(cfd, &req);
+                    break;
+                case cmd_mkdir:
+                    mkdir1_handler(cfd, &req);
+                    break;
+                case cmd_rmdir:
+                    rmdir1_handler(cfd, &req);
+                    break;
                 default:
                     break;
             }

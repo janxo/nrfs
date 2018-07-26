@@ -471,12 +471,48 @@ static int nrfs1_rename(const char *from, const char *to) {
 static int nrfs1_unlink(const char* path) {
 	printf("nrfs1_unlink\n");
 
+	request_t *req = build_req(RAID1, cmd_unlink, path, NULL, unused, 0, 0, 0);
+	
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+	writen(sfd0, req, sizeof(request_t));
+	writen(sfd1, req, sizeof(request_t));
+
+	status st;
+	readn(sfd0, &st, sizeof(status));
+	if (st == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
+	}
+
+	free(req);
 	return 0;
 }
 
 static int nrfs1_rmdir(const char* path) {
 	printf("nrfs1_rmdir\n");
 
+	request_t *req = build_req(RAID1, cmd_rmdir, path, NULL, unused, 0, 0, 0);
+
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+	writen(sfd0, req, sizeof(request_t));
+	writen(sfd1, req, sizeof(request_t));
+
+	status st;
+	readn(sfd0, &st, sizeof(status));
+	if (st == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
+	}
+
+	free(req);
 	return 0;
 }
 
@@ -484,6 +520,25 @@ static int nrfs1_rmdir(const char* path) {
 static int nrfs1_mkdir(const char* path, mode_t mode) {
 	printf("nrfs1_mkdir\n");
 
+	request_t *req = build_req(RAID1, cmd_mkdir, path, NULL, unused, 0, 0, 0);
+	req->f_info.mode = mode;
+	// printf("mode -- %d\n", mode);
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+	writen(sfd0, req, sizeof(request_t));
+	writen(sfd1, req, sizeof(request_t));
+
+	status st;
+	readn(sfd0, &st, sizeof(status));
+	if (st == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
+	}
+
+	free(req);
 	return 0;
 }
 
@@ -501,9 +556,10 @@ static int nrfs1_releasedir(const char* path, struct fuse_file_info *fi) {
 
 static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
 	printf("nrfs1_create\n");
-	printf("mode -- %d\n", mode);
+	// printf("mode -- %d\n", mode);
 	request_t *req = build_req(RAID1, cmd_create, path, fi, unused, 0, 0, 0);
 	cached_file.mode = mode;
+	req->f_info.mode = mode;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 	writen(sfd0, req, sizeof(request_t));
@@ -552,6 +608,7 @@ static int nrfs1_access(const char *path, int mask)
 		return -res;
 	}
 
+	free(req);
 	return 0;
 }
 
@@ -561,8 +618,7 @@ void cleanup() {
 	unlink(SWAP_FILE);
 }
 
-// TODO 
-// sets bad time 
+
 static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 	printf("nrfs1_utimens\n");
 	request_t *req = build_req(RAID1, cmd_utimens, path, NULL, unused, 0, 0, 0);
@@ -589,6 +645,8 @@ static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 		free(req);
 		return -res;
 	}
+
+	free(req);
 	return 0;
 }
 
@@ -691,6 +749,7 @@ int main(int argc, char *argv[]) {
 		nrfs_oper = &nrfs5_oper;
 	}
 	// fclose(log_file);
+	umask(0);
 	int fuse_res = fuse_main(argc, fuse_argv, nrfs_oper, NULL);
 
 	cleanup();
