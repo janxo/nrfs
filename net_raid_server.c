@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -145,7 +146,7 @@ static void getattr1_handler(int cfd, void *buff) {
 
     writen(cfd, &st, sizeof(st));
     writen(cfd, &stbuf, sizeof(stbuf));
-    if (st == -1) {
+    if (st == error) {
         printf("sizeof errno is -- %lu\n", sizeof(errno));
         printf("error -- %d\n", errno);
         int res = errno;
@@ -166,11 +167,74 @@ static void create1_handler(int cfd, void *buff) {
 
     writen(cfd, &st, sizeof(status));
     if (st == error) {
-        int res = error;
+        int res = errno;
         writen(cfd, &res, sizeof(res));
     }
 
     printf("!!! CREATE1 DONE !!! \n");
+}
+
+
+static void open1_handler(int cfd, void *buff) {
+    printf("!!! OPEN1 HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+    status st = open(path, req->f_info.flags);
+
+    writen(cfd, &st, sizeof(status));
+    if (st == error) {
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
+    }
+
+    printf("!!! OPEN1 DONE !!! \n");
+}
+
+static void access1_handler(int cfd, void *buff) {
+    printf("!!! ACCESS1 HANDLER !!!\n");
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+    status st = access(path, req->f_info.mask);
+
+    writen(cfd, &st, sizeof(status));
+
+    if (st == error) {
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
+    }
+
+    printf("!!! ACCESS1 DONE !!! \n");
+}
+
+
+static void utimens1_handler(int cfd, void *buff) {
+    printf("!!! UTIMENS1 HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+    // printf("path -- %s\n", path);
+
+    struct timespec ts[2];
+    // printf("add0 -- %d\n", ts);
+    // printf("add1 -- %d\n", &ts);
+    readn(cfd, ts, 2*sizeof(struct timespec));
+    // printf("time0 --- %s\n", ctime(&(ts[0].tv_sec)));
+    // printf("time1 --- %s\n", ctime(&(ts[1].tv_sec)));
+    // printf("shouldve read -- %zu\n", 2*sizeof(struct timespec));
+    // printf("actually read -- %d\n", read_n);
+    // printf("no follow -- %d\n", req->f_info.mask);
+
+    status stat = utimensat(AT_FDCWD, path, ts, AT_SYMLINK_NOFOLLOW);
+    // printf("status -- %d\n", stat);
+    writen(cfd, &stat, sizeof(status));
+
+    if (stat == error) {
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
+    }
+
+    printf("!!! UTIMENS1 DONE !!! \n");
 }
 
 void client_handler(int cfd) {
@@ -188,6 +252,15 @@ void client_handler(int cfd) {
             switch (req.fn) {
                 case cmd_getattr:
                     getattr1_handler(cfd, &req);
+                    break;
+                case cmd_utimens:
+                    utimens1_handler(cfd, &req);
+                    break;
+                case cmd_access:
+                    access1_handler(cfd, &req);
+                    break;
+                case cmd_open:
+                    open1_handler(cfd, &req);
                     break;
                 case cmd_create:
                     create1_handler(cfd, &req);

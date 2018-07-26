@@ -373,14 +373,25 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 	if (fi == NULL) {
 		printf("FI is NULL\n");
 	}
-	// int res;
+	
+	request_t *req = build_req(RAID1, cmd_open, path, fi, unused, 0, 0, 0);
+	
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+	writen(sfd0, req, sizeof(request_t));
+	writen(sfd1, req, sizeof(request_t));
 
-	// res = open(path, fi->flags);
-	// if (res == -1)
-	// 	return -errno;
+	status st;
+	readn(sfd0, &st, sizeof(status));
+	if (st == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
+	}
 
-	// fi->fh = res;
-
+	free(req);
 	return 0;
 }
 
@@ -503,11 +514,13 @@ static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi
 	if (st == error) {
 		int res;
 		readn(sfd0, &res, sizeof(res));
-		return -res;
 		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
 	}
 
 	file_created = true;
+	free(req);
 	return 0;
 }
 
@@ -517,12 +530,66 @@ static int nrfs1_truncate(const char *path, off_t size) {
 	return 0;
 }
 
+static int nrfs1_access(const char *path, int mask)
+{
+	printf("nrfs1_access\n");
+	request_t *req = build_req(RAID1, cmd_access, path, NULL, unused, 0, 0, 0);
+	req->f_info.mask = mask;
 
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+	writen(sfd0, req, sizeof(request_t));
+	writen(sfd1, req, sizeof(request_t));
+
+	status st;
+	readn(sfd0, &st, sizeof(status));
+
+	if (st == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
+	}
+
+	return 0;
+}
 
 
 void cleanup() {
 	fclose(log_file);
 	unlink(SWAP_FILE);
+}
+
+// TODO 
+// sets bad time 
+static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
+	printf("nrfs1_utimens\n");
+	request_t *req = build_req(RAID1, cmd_utimens, path, NULL, unused, 0, 0, 0);
+	req->f_info.mask = AT_SYMLINK_NOFOLLOW;
+	// printf("no follow -- %d\n", AT_SYMLINK_NOFOLLOW);
+	// printf("time0 --- %s\n", ctime(&(ts[0].tv_sec)));
+	// printf("time1 --- %s\n", ctime(&(ts[1].tv_sec)));
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+
+	writen(sfd0, req, sizeof(request_t));
+	write(sfd0, ts, 2*sizeof(struct timespec));
+
+	writen(sfd1, req, sizeof(request_t));
+	write(sfd1, ts, 2*sizeof(struct timespec));
+
+	status stat;
+	readn(sfd0, &stat, sizeof(status));
+
+	if (stat == error) {
+		int res;
+		readn(sfd0, &res, sizeof(res));
+		printf("error -- %d\n", -res);
+		free(req);
+		return -res;
+	}
+	return 0;
 }
 
 
@@ -531,7 +598,7 @@ static struct fuse_operations nrfs1_oper = {
     .destroy     = nrfs1_destroy,
     .getattr     = nrfs1_getattr,
  //    .fgetattr    = nrfs1_fgetattr,
- //    .access      = nrfs1_access,
+    .access      = nrfs1_access,
  //    .readlink    = nrfs1_readlink,
     .readdir     = nrfs1_readdir,
  //    .mknod       = nrfs1_mknod,
@@ -545,7 +612,7 @@ static struct fuse_operations nrfs1_oper = {
  //    .chown       = nrfs1_chown,
     .truncate    = nrfs1_truncate,
  //    .ftruncate   = nrfs1_ftruncate,
- //    .utimens     = nrfs1_utimens,
+    .utimens     = nrfs1_utimens,
     .create      = nrfs1_create,
     .open        = nrfs1_open,
     .read        = nrfs1_read,
