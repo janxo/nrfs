@@ -34,7 +34,7 @@ ssize_t readn(int fd, void *buffer, size_t n) {
 }
 
 size_t sendfilen(int out_fd, int in_fd, off_t offset, size_t count) {
-	ssize_t numWritten;
+	ssize_t numWritten = 0;
 	size_t totWritten;
 	printf("\nIN SENDFILEN !!! \n\n");
 	for (totWritten = 0; totWritten < count; ) {
@@ -49,6 +49,7 @@ size_t sendfilen(int out_fd, int in_fd, off_t offset, size_t count) {
 		}
 		totWritten += numWritten;
 	}
+	printf("totWritten -- %zu\n", totWritten);
 	return totWritten;
 }
 

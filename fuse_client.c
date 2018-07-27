@@ -449,9 +449,10 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 
 	int sfd0 = socket_fds[RAID1_MAIN];
 	writen(sfd0, req, sizeof(request_t));
-
+	printf("request sent\n");
 	status st;
 	readn(sfd0, &st, sizeof(status));
+	printf("status -- %d\n", st);
 	printf("offset -- %lu\n", offset);
 	printf("shouldve read -- %zu\n", size);
 	size_t read_n = 0;
@@ -463,24 +464,24 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 		printf("error -- %d\n", -res);
 		free(req);
 		return -res;
-		free(req);
+		
 	} else {
 		// TODO IMPLEMENT PARTIAL READ
-		int chunk_size = 400000;
-		char tmp[chunk_size];
+		
+		char tmp[size];
 		printf("before read\n");
 		// read_n = pread(sfd0, buf, size, offset);
 		 // while (read_n != 0)
 		read_n = read(sfd0, tmp, size);
 		
 		printf("read -- %zu\n", read_n);
-		printf("tmp -- %s\n", tmp);
+		// printf("tmp -- %s\n", tmp);
 		memcpy(buf, tmp, read_n);
 		if (read_n == -1) read_n = -errno;
 	}
 
 	free(req);
-
+	printf("\n !!! READ DONE !!!\n\n");
 	return read_n;
 }
 
@@ -779,10 +780,10 @@ int main(int argc, char *argv[]) {
 	char buff0[len];
 	char buff1[len];
 	char *buff2 = "-f";
-	// char *buff3 = "-o";
+	char *buff3 = "-s";
 	// char *buff4 = "nonempty";
 
-	argc = 3;
+	argc = 4;
 	char *fuse_argv[argc];
 	
 	strcpy(buff0, argv[0]);
@@ -791,7 +792,7 @@ int main(int argc, char *argv[]) {
 	fuse_argv[0] = buff0;
 	fuse_argv[1] = buff1;
 	fuse_argv[2] = buff2;
-	// fuse_argv[3] = buff3;
+	fuse_argv[3] = buff3;
 	// fuse_argv[4] = buff4;
 	// fuse_argv[3] = NULL;
 

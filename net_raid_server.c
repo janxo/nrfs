@@ -306,6 +306,7 @@ static void read1_handler(int cfd, void *buff) {
         writen(cfd, &res, sizeof(res));
     } else {
         size_t sent = sendfile(cfd, st, &req->f_info.offset, req->f_info.f_size);
+        // size_t sent = sendfile(cfd, st, &req->f_info.offset, CHUNK_SIZE);
         printf("sent -- %zu\n", sent);
         close(st);
     }
