@@ -29,7 +29,7 @@
 #define BUFF_len 32768	//32KB
 #define CHUNK_SIZE 132000
 
-typedef enum {unused = -50, success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
+typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
 
 typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink, cmd_create,
 			 cmd_open, cmd_readdir, cmd_read, cmd_write, cmd_mkdir, cmd_rmdir, cmd_rename} command;

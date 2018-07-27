@@ -449,12 +449,12 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 
 	int sfd0 = socket_fds[RAID1_MAIN];
 	writen(sfd0, req, sizeof(request_t));
-	printf("request sent\n");
+	// printf("request sent\n");
 	status st;
 	readn(sfd0, &st, sizeof(status));
-	printf("status -- %d\n", st);
-	printf("offset -- %lu\n", offset);
-	printf("shouldve read -- %zu\n", size);
+	// printf("status -- %d\n", st);
+	// printf("offset -- %lu\n", offset);
+	// printf("shouldve read -- %zu\n", size);
 	size_t read_n = 0;
 	// TODO maybe try to read from second server
 	// this time it just retunrs with errno
@@ -468,15 +468,20 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 	} else {
 		// TODO IMPLEMENT PARTIAL READ
 		
-		char tmp[size];
-		printf("before read\n");
+		char tmp[sizeof(status)+size];
+		// printf("before read\n");
+		status dum;
+		int dummy_len = sizeof(status);
 		// read_n = pread(sfd0, buf, size, offset);
 		 // while (read_n != 0)
-		read_n = read(sfd0, tmp, size);
+		read_n = read(sfd0, tmp, dummy_len+size);
 		
-		printf("read -- %zu\n", read_n);
+		memcpy(&dum, tmp, dummy_len);
+		// printf("dummy -- %d\n", dum);
+		// printf("read -- %zu\n", read_n);
+		read_n -= dummy_len;
 		// printf("tmp -- %s\n", tmp);
-		memcpy(buf, tmp, read_n);
+		memcpy(buf, tmp+dummy_len, read_n);
 		if (read_n == -1) read_n = -errno;
 	}
 

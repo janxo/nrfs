@@ -298,13 +298,19 @@ static void read1_handler(int cfd, void *buff) {
 
     status st = open(path, req->f_info.flags);
     writen(cfd, &st, sizeof(status));
-    printf("status -- %d\n", st);
-    printf("offset -- %lu\n", req->f_info.offset);
-    printf("should send -- %zu\n", req->f_info.f_size);
+    // printf("status -- %d\n", st);
+    // printf("offset -- %lu\n", req->f_info.offset);
+    // printf("should send -- %zu\n", req->f_info.f_size);
     if (st == error) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
     } else {
+        // send dummy for edge case
+        // when file size is 0
+        // client will block on read if we don't send anyhting
+        // so we send dummy bytes
+        status dum = dummy;
+        writen(cfd, &dum, sizeof(status));
         size_t sent = sendfile(cfd, st, &req->f_info.offset, req->f_info.f_size);
         // size_t sent = sendfile(cfd, st, &req->f_info.offset, CHUNK_SIZE);
         printf("sent -- %zu\n", sent);
