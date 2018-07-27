@@ -39,46 +39,40 @@ static void readdir1_handler(int cfd, void *buff) {
     request_t *req = (request_t *) buff;
     DIR *dp;
     struct dirent *de;
-    printf("path is -- %s\n", req->f_info.path);
     char *path = build_path(storage_path, req->f_info.path);
-    printf("new paths is -- %s\n", path);
     dp = opendir(path);
     free(path);
-    char delimiter = ' ';
+    
     if (dp == NULL) {
         st = error;
+        writen(cfd, &st, sizeof(status));
+        int res = errno;
+        writen(cfd, &res, sizeof(res));
     } else {
         st = success;
+        writen(cfd, &st, sizeof(status));
+
+        char delimiter = ' ';
+        response_t resp;
+        memset(resp.buff, 0, sizeof(resp.buff));
+
+        int index = 0;
+        while ((de = readdir(dp)) != NULL) {
+            printf("dir entry -- %s\n", de->d_name);
+            int dir_entry_len = strlen(de->d_name);
+            memcpy(resp.buff+index, de->d_name, dir_entry_len);
+            index += dir_entry_len;
+            resp.buff[index++] = delimiter;
+        }
+
+        resp.packet_size = index;
+        
+        writen(cfd, &resp.packet_size, sizeof(resp.packet_size));
+        writen(cfd, resp.buff, resp.packet_size);
+        printf("sending directories -- %s\n", resp.buff);
     }
-    response_t resp;
-    
-    memcpy(&resp.st, &st, sizeof(status));
-    // write(cfd, &st, sizeof(status));
-    int write_len = 0;
-    int index = 0;
-    while ((de = readdir(dp)) != NULL) {
-        printf("dir entry -- %s\n", de->d_name);
-        int dir_entry_len = strlen(de->d_name);
-        memcpy(resp.buff+index, de->d_name, dir_entry_len);
-        index += dir_entry_len;
-        resp.buff[index++] = delimiter;
-        // write_len = writen(cfd, de->d_name, strlen(de->d_name));
-        // printf("wrote -- %d bytes\n", write_len);
-        // write_len = writen(cfd, &delimiter, sizeof(delimiter));
-        // printf("wrote -- %d bytes\n", write_len);
-    }
-    int resp_base_size = ((char*) &resp.buff - (char*) &resp);
-    resp.packet_size = index + resp_base_size;
-    
-    // printf("indxex -- %d\n", index);
-    printf("about to send -- %d\n", resp.packet_size);
-    write_len = writen(cfd, &resp, resp.packet_size);
-    printf("sent -- %d\n", write_len);
-    printf("sending directories -- %s\n", resp.buff);
-    // printf("len -- %zu\n", strlen(resp.buff));
-    // char enf = '\0';
-    // write(cfd, &enf, sizeof(enf));
-    
+
+
     printf("!!! READDIR1 DONE !!!\n");
     closedir(dp);
 

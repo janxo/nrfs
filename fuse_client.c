@@ -172,6 +172,7 @@ void init(strg_info_t *strg) {
 
 static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi) {
+
 	printf("nfrfs1_readdir\n");
 	log_msg(&strg, RAID1_MAIN, "readdir");
 	request_t *req;
@@ -179,44 +180,39 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 	req = build_req(RAID1, cmd_readdir, path, fi, unused, 0, 0, 0);
 	int sfd = socket_fds[RAID1_MAIN];
-	printf("in client before write\n");
-	int wrote = write(sfd, req, sizeof(request_t));
+	write(sfd, req, sizeof(request_t));
 
-	printf("after write, written -- %d\n", wrote);
-	int read_b = read(sfd, &resp.packet_size, sizeof(resp.packet_size));
-	printf("read %d bytes\n", read_b);
-	int left_to_read = resp.packet_size - sizeof(resp.packet_size);
-	printf("about to read -- %d bytes\n", left_to_read);
-	read_b = readn(sfd, &resp.st, left_to_read);
-	printf("received directories -- %s\n", resp.buff);
-	// means server fd was closed
-	if (read_b == 0) {
-		printf("SERVER DEAD\n");
-		// TODO
-		// reconnect to server
-		
-	}
-	printf("after read\n");
-	printf("read %d bytes\n", read_b);
-	printf("status is -- %d\n", resp.st);
-	printf("buff -- %s\n", resp.buff);
-	// filler(buf, resp.buff, NULL, 0);
-	char *tok;
-	tok = strtok(resp.buff, " ");
+	status st;
+	readn(sfd, &st, sizeof(status));
+	if (st == error) {
+		int res;
+		readn(sfd, &res, sizeof(res));
+		free(req);
+		return -res;
 
+	} else {
+
+		memset(resp.buff, 0, sizeof(resp.buff));
+		int read_b = readn(sfd, &resp.packet_size, sizeof(resp.packet_size));
+
+		read_b = readn(sfd, resp.buff, resp.packet_size);
+
+		// means server fd was closed
+		if (read_b == -1) {
+			printf("SERVER DEAD\n");
+			// TODO
+			// reconnect to server
+		}
+
+		char *tok;
+		tok = strtok(resp.buff, " ");
 	
-	while(tok != NULL) {
-		filler(buf, tok, NULL, 0);
-		printf("tok -- %s\n", tok);
-		tok = strtok(NULL, " ");
+		while(tok != NULL) {
+			filler(buf, tok, NULL, 0);
+			printf("tok -- %s\n", tok);
+			tok = strtok(NULL, " ");
+		}
 	}
-
-	if (resp.st == success) {
-		printf("in success\n");
-		log_msg(&strg, RAID1_MAIN, "readdir was successfull");
-	}
-	else if (resp.st < success)
-		log_msg(&strg, RAID1_MAIN, "readdir -- something went wrong");
 
 	free(req);
 	return 0;
@@ -374,7 +370,7 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 	if (fi == NULL) {
 		printf("FI is NULL\n");
 	}
-	
+	printf("path -- %s\n", path);
 	request_t *req = build_req(RAID1, cmd_open, path, fi, unused, 0, 0, 0);
 	
 	int sfd0 = socket_fds[RAID1_MAIN];
@@ -391,9 +387,20 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 		free(req);
 		return -res;
 	}
-	// fi->fh = st;
 	printf("open was successful\n");
 	free(req);
+	// int opres = open(path, fi->flags);
+	// if (opres == -1){
+	// 	printf("errno -- %d\n", errno);
+	// 	// char newpath[20];
+	// 	// strcpy(newpath, path+1)
+	// 	printf("new path -- %s\n", path+1);
+	// 	opres = open(path+1, fi->flags);
+
+	// 	printf("opres -- %d\n", opres);
+	// 	printf("errno -- %d\n", errno);
+	// }
+
 	return 0;
 }
 
