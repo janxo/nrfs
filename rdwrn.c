@@ -5,13 +5,13 @@
 #include <stdio.h>
 
 
-ssize_t readn(int fd, void *buffer, size_t n) {
+ssize_t readn(int fd, const void *buffer, size_t n) {
 	// printf("!!! IN READN !!!\n");
 	ssize_t numRead;
 	size_t totRead;
 	char *buf;
 
-	buf = buffer;
+	buf = (char *) buffer;
 	// printf("in readn before loop\n");
 	for (totRead = 0; totRead < n; ) {
 		// printf("in da loop");
@@ -33,6 +33,31 @@ ssize_t readn(int fd, void *buffer, size_t n) {
 
 }
 
+
+
+ssize_t writen(int fd, const void *buffer, size_t n) {
+	// printf("!!! IN WRITEN !!!\n");
+	ssize_t numWritten;
+	size_t totWritten;
+	char *buf;
+
+	buf = (char *) buffer;
+	for (totWritten = 0; totWritten < n; ) {
+		numWritten = write(fd, buf, n - totWritten);
+		
+		if (numWritten <= 0) {
+		if (numWritten == -1 && errno == EINTR)
+			continue;
+		else
+			return -1;
+		}
+		totWritten += numWritten;
+		buf += numWritten;
+	}
+	return totWritten;
+}
+
+
 size_t sendfilen(int out_fd, int in_fd, off_t offset, size_t count) {
 	ssize_t numWritten = 0;
 	size_t totWritten;
@@ -50,27 +75,5 @@ size_t sendfilen(int out_fd, int in_fd, off_t offset, size_t count) {
 		totWritten += numWritten;
 	}
 	printf("totWritten -- %zu\n", totWritten);
-	return totWritten;
-}
-
-ssize_t writen(int fd, void *buffer, size_t n) {
-	// printf("!!! IN WRITEN !!!\n");
-	ssize_t numWritten;
-	size_t totWritten;
-	char *buf;
-
-	buf = buffer;
-	for (totWritten = 0; totWritten < n; ) {
-		numWritten = write(fd, buf, n - totWritten);
-		
-		if (numWritten <= 0) {
-		if (numWritten == -1 && errno == EINTR)
-			continue;
-		else
-			return -1;
-		}
-		totWritten += numWritten;
-		buf += numWritten;
-	}
 	return totWritten;
 }

@@ -40,7 +40,7 @@ FILE *log_file;
 cache_file_t cached_file;
 request_t *write_req;
 int swap_file_fd = -1;
-bool file_created = false;
+// bool file_created = false;
 
 
 // needed for fuse functions
@@ -54,24 +54,42 @@ void print_md5_sum(md5_t *md) {
  	}
 }
 
-static void get_file_hash(int fd, size_t f_size, md5_t *md5) {
-	printf("\nABOUT TO CALCULATE HASH\n\n");
-	char *file_buffer;
+// static void get_file_hash(int fd, size_t f_size, md5_t *md5) {
+// 	printf("\nABOUT TO CALCULATE HASH\n\n");
+// 	char *file_buffer;
 
-	file_buffer = mmap(0, f_size, PROT_READ, MAP_SHARED, fd, 0);
-	MD5((unsigned char*) file_buffer, f_size, md5->hash);
-	munmap(file_buffer, f_size);
+// 	file_buffer = mmap(0, f_size, PROT_READ, MAP_SHARED, fd, 0);
+// 	MD5((unsigned char*) file_buffer, f_size, md5->hash);
+// 	munmap(file_buffer, f_size);
+// 	print_md5_sum(md5);
+// 	char buff[128];
+// 	int i;
+// 	for(i=0; i <MD5_DIGEST_LENGTH; i++) {
+// 		sprintf(buff+i*2, "%02x",md5->hash[i]);
+// 	}
+// 	printf("\n\n");
+// 	printf("\nmd5 is -- %s\n", buff);
+// 	printf("len is -- %zu\n", strlen(buff));
+// 	// printf("digest len -- %d\n", strlen());
+// 	memcpy(md5->hash, buff, 2*MD5_DIGEST_LENGTH);
+// 	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
+// 	printf("\nmd5 is -- %s\n", md5->hash);
+// }
+
+static void get_hash(void *buff, size_t size, md5_t *md5) {
+	printf("\nABOUT TO CALCULATE HASH\n\n");
+	MD5((unsigned char*) buff, size, md5->hash);
 	print_md5_sum(md5);
-	char buff[128];
+	char tmp[128];
 	int i;
 	for(i=0; i <MD5_DIGEST_LENGTH; i++) {
-		sprintf(buff+i*2, "%02x",md5->hash[i]);
+		sprintf(tmp+i*2, "%02x",md5->hash[i]);
 	}
 	printf("\n\n");
-	printf("\nmd5 is -- %s\n", buff);
-	printf("len is -- %zu\n", strlen(buff));
+	printf("\nmd5 is -- %s\n", tmp);
+	printf("len is -- %zu\n", strlen(tmp));
 	// printf("digest len -- %d\n", strlen());
-	memcpy(md5->hash, buff, 2*MD5_DIGEST_LENGTH);
+	memcpy(md5->hash, tmp, 2*MD5_DIGEST_LENGTH);
 	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
 	printf("\nmd5 is -- %s\n", md5->hash);
 }
@@ -180,7 +198,7 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 	req = build_req(RAID1, cmd_readdir, path, fi, unused, 0, 0, 0);
 	int sfd = socket_fds[RAID1_MAIN];
-	write(sfd, req, sizeof(request_t));
+	writen(sfd, req, sizeof(request_t));
 
 	status st;
 	readn(sfd, &st, sizeof(status));
@@ -205,12 +223,12 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		}
 
 		char *tok;
-		tok = strtok(resp.buff, " ");
+		tok = strtok(resp.buff, ",");
 	
 		while(tok != NULL) {
 			filler(buf, tok, NULL, 0);
 			printf("tok -- %s\n", tok);
-			tok = strtok(NULL, " ");
+			tok = strtok(NULL, ",");
 		}
 	}
 
@@ -252,52 +270,93 @@ void free_cached(cache_file_t *cach_file) {
 
 
 
-static status send_file(int sfd, int fd, request_t *req, cache_file_t *cach_file, size_t chunk_size) {
+// static status send_file(int sfd, int fd, request_t *req, cache_file_t *cach_file, size_t chunk_size) {
 
-	struct stat stbuf;
-	fstat(fd, &stbuf);
-	printf("cache_size -- %zu\n", cach_file->f_size);
-	printf("st_buf_size -- %zu\n", stbuf.st_size);
-	printf("swap_fd -- %d\n", fd);
-	assert(stbuf.st_size == cach_file->f_size);
+// 	struct stat stbuf;
+// 	fstat(fd, &stbuf);
+// 	printf("cache_size -- %zu\n", cach_file->f_size);
+// 	printf("st_buf_size -- %zu\n", stbuf.st_size);
+// 	printf("swap_fd -- %d\n", fd);
+// 	assert(stbuf.st_size == cach_file->f_size);
 	
-	ssize_t numWritten = 0;
-	size_t totWritten;
+// 	ssize_t numWritten = 0;
+// 	size_t totWritten;
 
 
-	req->f_info.offset = cach_file->offset;
-	int counter = 0;
-	for (totWritten = 0; totWritten < cach_file->f_size; ) {
-		printf("\nIn writen count is -- %d\n\n", counter);
-		counter++;
-		size_t size = cach_file->f_size-totWritten;
-		if (size > chunk_size) {
-			size = chunk_size;
-			req->st = writing;
-		} else {
-			req->st = done;
-		}
+// 	req->f_info.offset = cach_file->offset;
+// 	int counter = 0;
+// 	for (totWritten = 0; totWritten < cach_file->f_size; ) {
+// 		printf("\nIn writen count is -- %d\n\n", counter);
+// 		counter++;
+// 		size_t size = cach_file->f_size-totWritten;
+// 		if (size > chunk_size) {
+// 			size = chunk_size;
+// 			req->st = writing;
+// 		} else {
+// 			req->st = done;
+// 		}
 
-		req->f_info.f_size = size;
-		printf("req status -- %d\n", req->st);
-		writen(sfd, req, sizeof(request_t));
-		numWritten = sendfile(sfd, fd, NULL, size);
-		printf("sent -- %zu\n", numWritten);
+// 		req->f_info.f_size = size;
+// 		printf("req status -- %d\n", req->st);
+// 		writen(sfd, req, sizeof(request_t));
+// 		numWritten = sendfile(sfd, fd, NULL, size);
+// 		printf("sent -- %zu\n", numWritten);
 		
-		if (numWritten <= 0) {
-			if (numWritten == -1 && errno == EINTR)
-				continue;
-			else
-				return error;
+// 		if (numWritten <= 0) {
+// 			if (numWritten == -1 && errno == EINTR)
+// 				continue;
+// 			else
+// 				return error;
+// 		}
+// 		req->f_info.offset += numWritten;
+// 		totWritten += numWritten;
+// 	}
+// 	return success;
+// }
+
+
+
+static status send_file(int sfd, request_t *req, const char *buf) {
+
+	// send request to server
+	writen(sfd, req, sizeof(request_t));
+	printf("errno -- %d\n", errno);
+	errno = 1234;
+	printf("errno -- %d\n", errno);
+	status st;
+
+	// read file open status from server
+	readn(sfd, &st, sizeof(status));
+	
+	if (st == error) {
+		// read errno
+		readn(sfd, &errno, sizeof(int));
+		printf("errno -- %d\n", errno);
+		errno = st;
+		return st;
+	} else {
+		// char cache[size];
+		// memcpy(cache, buf, size);
+		printf("should send -- %zu bytes\n", req->f_info.f_size);
+
+		md5_t md5;
+		void *file_chunk = (void *) buf;
+		get_hash(file_chunk, req->f_info.f_size, &md5);
+		printf("md5 hash size -- %zu\n", sizeof(md5.hash));
+		writen(sfd, &md5, sizeof(md5.hash));
+		writen(sfd, buf, req->f_info.f_size);
+		printf("sent -- %s\n", buf);
+
+		readn(sfd, &st, sizeof(status));
+		if (st == error) {
+			readn(sfd, &errno, sizeof(int));
+			printf("error writing file -- %d\n", -errno);
+			return st;
 		}
-		req->f_info.offset += numWritten;
-		totWritten += numWritten;
 	}
-	return success;
+
+	return st;
 }
-
-
-
 
 /** 
  * accumulates data in swap file. if it's last chunk sends data first to main server
@@ -306,7 +365,69 @@ static status send_file(int sfd, int fd, request_t *req, cache_file_t *cach_file
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
 														struct fuse_file_info *fi) {
 	printf("nrfs1_write\n");
+
 	if (fi == NULL) {
+		printf("FI is NULL\n");
+	}
+	printf("read flag -- %d\n", O_RDONLY);
+	printf("wrtie flag -- %d, %d\n", O_WRONLY, O_RDWR);
+	printf("fi flags before -- %d\n", fi->flags);
+
+	request_t *req = build_req(RAID1, cmd_write, path, fi, unused, size, offset, 0);
+	req->f_info.flags |= O_WRONLY;
+	printf("fi flags after -- %d\n", req->f_info.flags);
+	int sfd0 = socket_fds[RAID1_MAIN];
+	int sfd1 = socket_fds[RAID1_REPLICANT];
+	status st = send_file(sfd0, req, buf);
+
+	if (st == error) {
+		free(req);
+		return -errno;
+	}
+
+	st = send_file(sfd1, req, buf);
+	if (st == error) {
+		free(req);
+		return -errno;
+	}
+
+	free(req);
+	return size;
+}
+	/*writen(sfd0, req, sizeof(request_t));
+
+	status st;
+	readn(sfd0, &st, sizeof(status));
+	if (st == error) {
+		readn(sfd0, &st, sizeof(status));
+		printf("errno -- %d\n", -st);
+		free(req);
+		return -st;
+	} else {
+		// char cache[size];
+		// memcpy(cache, buf, size);
+		printf("should send -- %zu bytes\n", size);
+
+		md5_t md5;
+		void *file_chunk = (void *) buf;
+		get_hash(file_chunk, size, &md5);
+		printf("md5 hash size -- %zu\n", sizeof(md5.hash));
+		writen(sfd0, &md5, sizeof(md5.hash));
+		writen(sfd0, buf, size);
+		printf("sent -- %s\n", buf);
+
+		status res;
+		readn(sfd0, &res, sizeof(status));
+		if (res == error) {
+			int err;
+			readn(sfd0, &err, sizeof(err));
+			printf("error writing file -- %d\n", -err);
+			free(req);
+			return -err;*/
+
+
+	// writen()
+	/*if (fi == NULL) {
 		printf("FI is NULL\n");
 	}	
 	printf("fi flags -- %d\n", fi->flags);
@@ -358,11 +479,7 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 		unlink(SWAP_FILE);
 		file_created = false;
 		printf("WRITE DONE\n");
-	}
-
-
-	return size;
-}
+	}*/
 
 
 static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
@@ -452,7 +569,9 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 											 struct fuse_file_info* fi) {
 	printf("nrfs1_read\n");
 	request_t *req = build_req(RAID1, cmd_read, path, fi, unused, size, offset, 0);
-	req->f_info.flags = O_RDONLY;
+	
+	req->f_info.flags |= O_RDONLY;
+	printf("flags after -- %d\n", req->f_info.flags);
 
 	int sfd0 = socket_fds[RAID1_MAIN];
 	writen(sfd0, req, sizeof(request_t));
@@ -612,7 +731,7 @@ static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi
 	}
 
 
-	file_created = true;
+	// file_created = true;
 	free(req);
 	return 0;
 }
@@ -665,10 +784,10 @@ static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 
 	writen(sfd0, req, sizeof(request_t));
-	write(sfd0, ts, 2*sizeof(struct timespec));
+	writen(sfd0, ts, 2*sizeof(struct timespec));
 
 	writen(sfd1, req, sizeof(request_t));
-	write(sfd1, ts, 2*sizeof(struct timespec));
+	writen(sfd1, ts, 2*sizeof(struct timespec));
 
 	status stat;
 	readn(sfd0, &stat, sizeof(status));
@@ -696,11 +815,11 @@ static int nrfs1_rename(const char *from, const char *to) {
 
 	writen(sfd0, req, sizeof(request_t));
 	writen(sfd0, &len, sizeof(size_t));
-	write(sfd0, to, len);
+	writen(sfd0, to, len);
 
 	writen(sfd1, req, sizeof(request_t));
 	writen(sfd1, &len, sizeof(size_t));
-	write(sfd1, to, len);
+	writen(sfd1, to, len);
 
 	status stat;
 	readn(sfd0, &stat, sizeof(status));

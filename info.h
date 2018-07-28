@@ -29,6 +29,7 @@
 #define BUFF_len 32768	//32KB
 #define CHUNK_SIZE 132000
 
+
 typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
 
 typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink, cmd_create,
@@ -73,8 +74,8 @@ typedef struct file_info {
 	off_t f_size;
 	off_t offset;
 	size_t padding_size;
-	md5_t md5;
-	bool created;
+	// md5_t md5;
+	// bool created;
 } file_info;
 
 typedef struct {

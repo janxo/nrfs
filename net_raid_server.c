@@ -52,7 +52,7 @@ static void readdir1_handler(int cfd, void *buff) {
         st = success;
         writen(cfd, &st, sizeof(status));
 
-        char delimiter = ' ';
+        char delimiter = ',';
         response_t resp;
         memset(resp.buff, 0, sizeof(resp.buff));
 
@@ -84,46 +84,75 @@ static void write1_handler(int cfd, void *buff) {
     printf("!!! IN WRITE HANDLER !!!\n");
     request_t *req = (request_t *) buff;
 
-    struct stat stbuf;
+    // struct stat stbuf;
     char *path = build_path(storage_path, req->f_info.path);
     printf("file -- %s\n", path);
     // if (req->f_info.mode != 0) {
     //     req->f_info.mode = 0644;
     // }
-    if (req->f_info.created) {
-        printf("file created\n");
-    }
-    int fd = open(path, req->f_info.flags, req->f_info.mode);
-    printf("err -- %d\n", errno);
-    printf("fd -- %d\n", fd);
-    fstat(fd, &stbuf);
-    printf("file mode -- %d\n", req->f_info.mode);
-    printf("file flags --%d\n", req->f_info.flags);
-    printf("st_mode -- %d\n", stbuf.st_mode);
-    response_t resp;
-    printf("status received -- %d\n", req->st);
-    int read_n = read(cfd, resp.buff, req->f_info.f_size);
-    printf("read -- %d\n", read_n);
-    printf("received -- %s\n", resp.buff);
+    // if (req->f_info.created) {
+    //     printf("file created\n");
+    // }
+    status fd = open(path, req->f_info.flags, req->f_info.mode);
+    printf("flags -- %d\n", req->f_info.flags);
+    writen(cfd, &fd, sizeof(status));
+    if (fd == error) {
+        fd = errno;
+        printf("err -- %d\n", errno);
+        printf("fd -- %d\n", fd);
+        writen(cfd, &fd, sizeof(status));
+    } else {
 
-    int res = pwrite(fd, resp.buff, read_n, req->f_info.offset);
-    printf("res is -- %d\n", res);
+        // fstat(fd, &stbuf);
+        // printf("file mode -- %d\n", req->f_info.mode);
+        // printf("file flags --%d\n", req->f_info.flags);
+        // printf("st_mode -- %d\n", stbuf.st_mode);
+        md5_t md5;
+        char file_chunk[req->f_info.f_size];
+        // printf("status received -- %d\n", req->st);
+        int read_n = readn(cfd, &md5.hash, sizeof(md5.hash));
+        printf("read -- %d\n", read_n);
+        printf("received -- %s\n", md5.hash);
+        read_n = readn(cfd, file_chunk, req->f_info.f_size);
+        printf("read -- %d\n", read_n);
+        printf("received -- %s\n", file_chunk);
+    
+        status res = pwrite(fd, file_chunk, read_n, req->f_info.offset);
+        printf("res is -- %d\n", res);
+        writen(cfd, &res, sizeof(status));
+        if (res == error) {
+            printf("error writing file\n");
+            int err = errno;
+            writen(cfd, &err, sizeof(err));
+        } else {
+            res = setxattr(path, "user.hash", md5.hash, sizeof(md5.hash), XATTR_CREATE);
+            printf("xattr res -- %d -- %d\n", res, -errno);
+            if (res == error) {
+                res = setxattr(path, "user.hash", md5.hash, sizeof(md5.hash), XATTR_REPLACE);
+                printf("xattr res1 -- %d -- %d\n", res, -errno);
+
+                
+            }
+        }
+        
+    }
+ 
     
     
     // last packet of file
-    if (req->st == done) {
-        status write_success = done;
-        // notify client whether file write is done or still going
-        writen(cfd, &write_success, sizeof(status));
+    
+        // status write_success = done;
+        // // notify client whether file write is done or still going
+        // writen(cfd, &write_success, sizeof(status));
 
-        printf("status sent -- %d\n", write_success);
+        // printf("status sent -- %d\n", write_success);
         // bool file_created = ((req->f_info.flags & O_CREAT) == O_CREAT);
         // int attr_flags = XATTR_REPLACE;
         // if (file_created) {
         //     attr_flags = XATTR_CREATE;
         // }
         // fsetxattr(fd, "user.hash", req->f_info.md5.hash, strlen((const char*)req->f_info.md5.hash), attr_flags);
-    }
+    
  
     close(fd);
     free(path);
@@ -147,7 +176,7 @@ static void getattr1_handler(int cfd, void *buff) {
         printf("error -- %d\n", errno);
         int res = errno;
         printf("res is %d\n", res);
-        write(cfd, &res, sizeof(res));
+        writen(cfd, &res, sizeof(res));
     }
     printf("st size -- %zu\n", stbuf.st_size);
     free(path);
