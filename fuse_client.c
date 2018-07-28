@@ -39,7 +39,6 @@ strg_info_t strg;
 FILE *log_file;
 cache_file_t cached_file;
 request_t *write_req;
-int swap_file_fd = -1;
 // bool file_created = false;
 
 
@@ -54,27 +53,7 @@ void print_md5_sum(md5_t *md) {
  	}
 }
 
-// static void get_file_hash(int fd, size_t f_size, md5_t *md5) {
-// 	printf("\nABOUT TO CALCULATE HASH\n\n");
-// 	char *file_buffer;
 
-// 	file_buffer = mmap(0, f_size, PROT_READ, MAP_SHARED, fd, 0);
-// 	MD5((unsigned char*) file_buffer, f_size, md5->hash);
-// 	munmap(file_buffer, f_size);
-// 	print_md5_sum(md5);
-// 	char buff[128];
-// 	int i;
-// 	for(i=0; i <MD5_DIGEST_LENGTH; i++) {
-// 		sprintf(buff+i*2, "%02x",md5->hash[i]);
-// 	}
-// 	printf("\n\n");
-// 	printf("\nmd5 is -- %s\n", buff);
-// 	printf("len is -- %zu\n", strlen(buff));
-// 	// printf("digest len -- %d\n", strlen());
-// 	memcpy(md5->hash, buff, 2*MD5_DIGEST_LENGTH);
-// 	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
-// 	printf("\nmd5 is -- %s\n", md5->hash);
-// }
 
 static void get_hash(void *buff, size_t size, md5_t *md5) {
 	printf("\nABOUT TO CALCULATE HASH\n\n");
@@ -269,53 +248,6 @@ void free_cached(cache_file_t *cach_file) {
 
 
 
-
-// static status send_file(int sfd, int fd, request_t *req, cache_file_t *cach_file, size_t chunk_size) {
-
-// 	struct stat stbuf;
-// 	fstat(fd, &stbuf);
-// 	printf("cache_size -- %zu\n", cach_file->f_size);
-// 	printf("st_buf_size -- %zu\n", stbuf.st_size);
-// 	printf("swap_fd -- %d\n", fd);
-// 	assert(stbuf.st_size == cach_file->f_size);
-	
-// 	ssize_t numWritten = 0;
-// 	size_t totWritten;
-
-
-// 	req->f_info.offset = cach_file->offset;
-// 	int counter = 0;
-// 	for (totWritten = 0; totWritten < cach_file->f_size; ) {
-// 		printf("\nIn writen count is -- %d\n\n", counter);
-// 		counter++;
-// 		size_t size = cach_file->f_size-totWritten;
-// 		if (size > chunk_size) {
-// 			size = chunk_size;
-// 			req->st = writing;
-// 		} else {
-// 			req->st = done;
-// 		}
-
-// 		req->f_info.f_size = size;
-// 		printf("req status -- %d\n", req->st);
-// 		writen(sfd, req, sizeof(request_t));
-// 		numWritten = sendfile(sfd, fd, NULL, size);
-// 		printf("sent -- %zu\n", numWritten);
-		
-// 		if (numWritten <= 0) {
-// 			if (numWritten == -1 && errno == EINTR)
-// 				continue;
-// 			else
-// 				return error;
-// 		}
-// 		req->f_info.offset += numWritten;
-// 		totWritten += numWritten;
-// 	}
-// 	return success;
-// }
-
-
-
 static status send_file(int sfd, request_t *req, const char *buf) {
 
 	// send request to server
@@ -394,92 +326,7 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 	free(req);
 	return size;
 }
-	/*writen(sfd0, req, sizeof(request_t));
 
-	status st;
-	readn(sfd0, &st, sizeof(status));
-	if (st == error) {
-		readn(sfd0, &st, sizeof(status));
-		printf("errno -- %d\n", -st);
-		free(req);
-		return -st;
-	} else {
-		// char cache[size];
-		// memcpy(cache, buf, size);
-		printf("should send -- %zu bytes\n", size);
-
-		md5_t md5;
-		void *file_chunk = (void *) buf;
-		get_hash(file_chunk, size, &md5);
-		printf("md5 hash size -- %zu\n", sizeof(md5.hash));
-		writen(sfd0, &md5, sizeof(md5.hash));
-		writen(sfd0, buf, size);
-		printf("sent -- %s\n", buf);
-
-		status res;
-		readn(sfd0, &res, sizeof(status));
-		if (res == error) {
-			int err;
-			readn(sfd0, &err, sizeof(err));
-			printf("error writing file -- %d\n", -err);
-			free(req);
-			return -err;*/
-
-
-	// writen()
-	/*if (fi == NULL) {
-		printf("FI is NULL\n");
-	}	
-	printf("fi flags -- %d\n", fi->flags);
-	bool is_last_packet = false;
-
-	if (cached_file.f_size == 0) {
-		cached_file.offset = offset;
-		swap_file_fd = open(SWAP_FILE, O_CREAT|O_RDWR|O_APPEND, 0644);
-		write_req = build_req(RAID1, cmd_write, path, fi, writing, size, offset, 0);
-		write_req->f_info.created = file_created;
-		write_req->f_info.mode = cached_file.mode;
-	}
-
-	if (size != 0 && (size < FUSE_BUFF_LEN)) {
-		is_last_packet = true;
-		printf("size is -- %zu\n", size);
-	} 
-
-	pwrite(swap_file_fd, buf, size, offset);
-	cached_file.f_size += size;
-
-	if (is_last_packet) {
-		int sfd0 = socket_fds[RAID1_MAIN];
-		printf("should write file -- %zu\n", cached_file.f_size);
-		get_file_hash(swap_file_fd, cached_file.f_size, &write_req->f_info.md5);
-		// print_md5_sum(&write_req->f_info.hash);
-		send_file(sfd0, swap_file_fd, write_req, &cached_file, FUSE_BUFF_LEN);
-
-		status st = unused;
-		readn(sfd0, &st, sizeof(status));
-
-		printf("file write done with status -- %d\n", st);
-
-
-		// reset file pointer to head
-		lseek(swap_file_fd, SEEK_SET, 0);
-
-		// successfull write to main server thus we write on replicant server
-		if (st == done) {
-			int sfd1 = socket_fds[RAID1_REPLICANT];
-			send_file(sfd1, swap_file_fd, write_req, &cached_file, FUSE_BUFF_LEN);
-		}
-
-		// free resources
-		free(write_req);
-		write_req = NULL;
-		free_cached(&cached_file);
-		close(swap_file_fd);
-		unlink(SWAP_FILE);
-		file_created = false;
-		printf("WRITE DONE\n");
-	}*/
 
 
 static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
@@ -506,18 +353,6 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 	}
 	printf("open was successful\n");
 	free(req);
-	// int opres = open(path, fi->flags);
-	// if (opres == -1){
-	// 	printf("errno -- %d\n", errno);
-	// 	// char newpath[20];
-	// 	// strcpy(newpath, path+1)
-	// 	printf("new path -- %s\n", path+1);
-	// 	opres = open(path+1, fi->flags);
-
-	// 	printf("opres -- %d\n", opres);
-	// 	printf("errno -- %d\n", errno);
-	// }
-
 	return 0;
 }
 
@@ -592,9 +427,8 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 		return -res;
 		
 	} else {
-		// TODO IMPLEMENT PARTIAL READ
 		
-		char tmp[sizeof(status)+size];
+		char *tmp = malloc(sizeof(status)+size);
 		// printf("before read\n");
 		status dum;
 		int dummy_len = sizeof(status);
@@ -609,6 +443,8 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 		// printf("tmp -- %s\n", tmp);
 		memcpy(buf, tmp+dummy_len, read_n);
 		if (read_n == -1) read_n = -errno;
+
+		free(tmp);
 	}
 
 	free(req);
@@ -771,7 +607,6 @@ static int nrfs1_access(const char *path, int mask)
 
 void cleanup() {
 	fclose(log_file);
-	unlink(SWAP_FILE);
 }
 
 

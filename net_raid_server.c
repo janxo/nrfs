@@ -108,7 +108,7 @@ static void write1_handler(int cfd, void *buff) {
         // printf("file flags --%d\n", req->f_info.flags);
         // printf("st_mode -- %d\n", stbuf.st_mode);
         md5_t md5;
-        char file_chunk[req->f_info.f_size];
+        char *file_chunk = malloc(req->f_info.f_size);
         // printf("status received -- %d\n", req->st);
         int read_n = readn(cfd, &md5.hash, sizeof(md5.hash));
         printf("read -- %d\n", read_n);
@@ -131,29 +131,13 @@ static void write1_handler(int cfd, void *buff) {
                 res = setxattr(path, "user.hash", md5.hash, sizeof(md5.hash), XATTR_REPLACE);
                 printf("xattr res1 -- %d -- %d\n", res, -errno);
 
-                
+
             }
         }
-        
+        free(file_chunk);
     }
- 
+     
     
-    
-    // last packet of file
-    
-        // status write_success = done;
-        // // notify client whether file write is done or still going
-        // writen(cfd, &write_success, sizeof(status));
-
-        // printf("status sent -- %d\n", write_success);
-        // bool file_created = ((req->f_info.flags & O_CREAT) == O_CREAT);
-        // int attr_flags = XATTR_REPLACE;
-        // if (file_created) {
-        //     attr_flags = XATTR_CREATE;
-        // }
-        // fsetxattr(fd, "user.hash", req->f_info.md5.hash, strlen((const char*)req->f_info.md5.hash), attr_flags);
-    
- 
     close(fd);
     free(path);
     printf("!!! END WRITE HANDLER !!! \n");
