@@ -16,7 +16,7 @@
 #define RAID1_MAIN 0
 #define RAID1_REPLICANT 1
 
-#define SWAP_FILE ".swap"
+#define ATTR_HASH "user.hash"
 
 #define FUSE_BUFF_LEN 4096
 
@@ -34,6 +34,13 @@ typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1 ,
 
 typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink, cmd_create,
 			 cmd_open, cmd_readdir, cmd_read, cmd_write, cmd_mkdir, cmd_rmdir, cmd_rename} command;
+
+
+typedef struct {
+    uint32_t buf[4];
+    uint32_t bits[2];
+    unsigned char in[64];
+} MD5Context_t;
 
 
 typedef struct {

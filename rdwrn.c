@@ -3,6 +3,7 @@
 #include "rdwrn.h"
 #include <sys/sendfile.h>
 #include <stdio.h>
+#include <string.h>
 
 
 ssize_t readn(int fd, const void *buffer, size_t n) {
@@ -77,3 +78,33 @@ size_t sendfilen(int out_fd, int in_fd, off_t offset, size_t count) {
 	printf("totWritten -- %zu\n", totWritten);
 	return totWritten;
 }
+
+
+void md5_tostr(unsigned char *digest, md5_t *md5) {
+	char tmp[128];
+	int i;
+	for (i=0; i <MD5_DIGEST_LENGTH; i++) {
+		sprintf(tmp+i*2, "%02x",digest[i]);
+	}
+	memcpy(md5->hash, tmp, 2*MD5_DIGEST_LENGTH);
+	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
+}
+
+
+// void get_hash(void *buff, size_t size, md5_t *md5) {
+// 	// printf("\nABOUT TO CALCULATE HASH\n\n");
+// 	MD5((unsigned char*) buff, size, md5->hash);
+// 	print_md5_sum(md5);
+// 	char tmp[128];
+// 	int i;
+// 	for (i=0; i <MD5_DIGEST_LENGTH; i++) {
+// 		sprintf(tmp+i*2, "%02x",md5->hash[i]);
+// 	}
+// 	printf("\n\n");
+// 	// printf("\nmd5 is -- %s\n", tmp);
+// 	// printf("len is -- %zu\n", strlen(tmp));
+// 	// printf("digest len -- %d\n", strlen());
+// 	memcpy(md5->hash, tmp, 2*MD5_DIGEST_LENGTH);
+// 	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
+// 	// printf("\nmd5 is -- %s\n", md5->hash);
+// }

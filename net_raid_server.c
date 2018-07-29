@@ -84,17 +84,10 @@ static void write1_handler(int cfd, void *buff) {
     printf("!!! IN WRITE HANDLER !!!\n");
     request_t *req = (request_t *) buff;
 
-    // struct stat stbuf;
     char *path = build_path(storage_path, req->f_info.path);
-    printf("file -- %s\n", path);
-    // if (req->f_info.mode != 0) {
-    //     req->f_info.mode = 0644;
-    // }
-    // if (req->f_info.created) {
-    //     printf("file created\n");
-    // }
+
     status fd = open(path, req->f_info.flags, req->f_info.mode);
-    printf("flags -- %d\n", req->f_info.flags);
+   
     writen(cfd, &fd, sizeof(status));
     if (fd == error) {
         fd = errno;
@@ -103,10 +96,6 @@ static void write1_handler(int cfd, void *buff) {
         writen(cfd, &fd, sizeof(status));
     } else {
 
-        // fstat(fd, &stbuf);
-        // printf("file mode -- %d\n", req->f_info.mode);
-        // printf("file flags --%d\n", req->f_info.flags);
-        // printf("st_mode -- %d\n", stbuf.st_mode);
         md5_t md5;
         char *file_chunk = malloc(req->f_info.f_size);
         // printf("status received -- %d\n", req->st);
@@ -125,10 +114,10 @@ static void write1_handler(int cfd, void *buff) {
             int err = errno;
             writen(cfd, &err, sizeof(err));
         } else {
-            res = setxattr(path, "user.hash", md5.hash, sizeof(md5.hash), XATTR_CREATE);
+            res = setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_CREATE);
             printf("xattr res -- %d -- %d\n", res, -errno);
             if (res == error) {
-                res = setxattr(path, "user.hash", md5.hash, sizeof(md5.hash), XATTR_REPLACE);
+                res = setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_REPLACE);
                 printf("xattr res1 -- %d -- %d\n", res, -errno);
 
 
