@@ -154,13 +154,15 @@ static void getattr1_handler(int cfd, void *buff) {
     st = lstat(path, &stbuf);
 
     writen(cfd, &st, sizeof(st));
-    writen(cfd, &stbuf, sizeof(stbuf));
+    
     if (st == error) {
         printf("sizeof errno is -- %lu\n", sizeof(errno));
         printf("error -- %d\n", errno);
         int res = errno;
         printf("res is %d\n", res);
         writen(cfd, &res, sizeof(res));
+    } else {
+        writen(cfd, &stbuf, sizeof(stbuf));
     }
     printf("st size -- %zu\n", stbuf.st_size);
     free(path);
@@ -318,7 +320,7 @@ static void read1_handler(int cfd, void *buff) {
         // so we send dummy bytes
         status dum = dummy;
         writen(cfd, &dum, sizeof(status));
-        size_t sent = sendfile(cfd, st, &req->f_info.offset, req->f_info.f_size);
+        size_t sent = sendfile(cfd, st, &req->f_info.offset, READ_CHUNK_LEN);
         // size_t sent = sendfile(cfd, st, &req->f_info.offset, CHUNK_SIZE);
         printf("sent -- %zu\n", sent);
         close(st);

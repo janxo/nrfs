@@ -369,8 +369,6 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	readn(sfd, &st, sizeof(st));
 
 
-	readn(sfd, stbuf, sizeof(struct stat));
-
 	if (st == error) {
 		printf("STATUS -- %d\n", st);
 		
@@ -380,7 +378,9 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 		printf("errno -- %d\n", res);
 		free(req);
 		return -res;
-	} 
+	} else {
+		readn(sfd, stbuf, sizeof(struct stat));
+	}
 	// printf("st_mode2 -- %d\n", stbuf->st_mode);
 	// printf("sizeof stbuf -- %zu\n", sizeof(struct stat));
 	printf("st size -- %zu\n", stbuf->st_size);
@@ -406,7 +406,6 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 	request_t *req = build_req(RAID1, cmd_read, path, fi, unused, size, offset, 0);
 	
 	req->f_info.flags |= O_RDONLY;
-	printf("flags after -- %d\n", req->f_info.flags);
 
 	int sfd0 = socket_fds[RAID1_MAIN];
 	writen(sfd0, req, sizeof(request_t));
@@ -428,17 +427,18 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 		
 	} else {
 		
-		char *tmp = malloc(sizeof(status)+size);
+		char *tmp = malloc(sizeof(status)+READ_CHUNK_LEN);
 		// printf("before read\n");
 		status dum;
 		int dummy_len = sizeof(status);
-		// read_n = pread(sfd0, buf, size, offset);
-		 // while (read_n != 0)
-		read_n = read(sfd0, tmp, dummy_len+size);
+		
+		printf("should've read -- %zu\n", size);
+		read_n = read(sfd0, tmp, dummy_len+READ_CHUNK_LEN);
 		
 		memcpy(&dum, tmp, dummy_len);
-		// printf("dummy -- %d\n", dum);
-		// printf("read -- %zu\n", read_n);
+		printf("dummy -- %d\n", dum);
+		
+		printf("read -- %zu\n", read_n);
 		read_n -= dummy_len;
 		// printf("tmp -- %s\n", tmp);
 		memcpy(buf, tmp+dummy_len, read_n);

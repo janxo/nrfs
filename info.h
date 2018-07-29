@@ -27,6 +27,7 @@
 #define PORT_LEN 8
 #define CACHE_LEN 10
 #define BUFF_len 32768	//32KB
+#define READ_CHUNK_LEN 32768
 
 
 typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
