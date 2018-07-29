@@ -432,13 +432,13 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 		status dum;
 		int dummy_len = sizeof(status);
 		
-		printf("should've read -- %zu\n", size);
+		// printf("should've read -- %zu\n", size);
 		read_n = read(sfd0, tmp, dummy_len+READ_CHUNK_LEN);
 		
 		memcpy(&dum, tmp, dummy_len);
-		printf("dummy -- %d\n", dum);
+		// printf("dummy -- %d\n", dum);
 		
-		printf("read -- %zu\n", read_n);
+		// printf("read -- %zu\n", read_n);
 		read_n -= dummy_len;
 		// printf("tmp -- %s\n", tmp);
 		memcpy(buf, tmp+dummy_len, read_n);
