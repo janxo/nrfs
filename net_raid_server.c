@@ -377,8 +377,7 @@ void client_handler(int cfd) {
     while (1) {
         printf("IN the loop\n");
         data_size = readn (cfd, &req, sizeof(request_t));
-        printf("sizeof request_t -- %lu\n", sizeof(request_t));
-        printf("data_size ---- %d\n", data_size);
+
         if (req.raid == RAID1) {
             switch (req.fn) {
                 case cmd_getattr:
@@ -420,8 +419,7 @@ void client_handler(int cfd) {
                     break;
             }
         }
-        printf("sizeof request_t -- %lu\n", sizeof(request_t));
-        printf("data_size ---- %d\n", data_size);
+ 
         if (data_size <= 0) {
             printf("data size less than 0 -- %d\n", data_size);
             break;

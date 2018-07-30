@@ -91,20 +91,14 @@ void md5_tostr(unsigned char *digest, md5_t *md5) {
 }
 
 
-// void get_hash(void *buff, size_t size, md5_t *md5) {
-// 	// printf("\nABOUT TO CALCULATE HASH\n\n");
-// 	MD5((unsigned char*) buff, size, md5->hash);
-// 	print_md5_sum(md5);
-// 	char tmp[128];
-// 	int i;
-// 	for (i=0; i <MD5_DIGEST_LENGTH; i++) {
-// 		sprintf(tmp+i*2, "%02x",md5->hash[i]);
-// 	}
-// 	printf("\n\n");
-// 	// printf("\nmd5 is -- %s\n", tmp);
-// 	// printf("len is -- %zu\n", strlen(tmp));
-// 	// printf("digest len -- %d\n", strlen());
-// 	memcpy(md5->hash, tmp, 2*MD5_DIGEST_LENGTH);
-// 	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
-// 	// printf("\nmd5 is -- %s\n", md5->hash);
-// }
+void get_hash(void *buff, size_t size, md5_t *md5) {
+	MD5((unsigned char*) buff, size, md5->hash);
+	char tmp[128];
+	int i;
+	for (i=0; i <MD5_DIGEST_LENGTH; i++) {
+		sprintf(tmp+i*2, "%02x",md5->hash[i]);
+	}
+
+	memcpy(md5->hash, tmp, 2*MD5_DIGEST_LENGTH);
+	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
+}

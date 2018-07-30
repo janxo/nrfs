@@ -31,10 +31,11 @@
 #define READ_CHUNK_LEN 32768
 
 
-typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1 , writing = 2, file_create = 7} status;
+typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1 , writing = 2, hash_match = 4, hash_mismatch = -4} status;
 
-typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink, cmd_create,
-			 cmd_open, cmd_readdir, cmd_read, cmd_write, cmd_mkdir, cmd_rmdir, cmd_rename} command;
+typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink,
+			 cmd_create, cmd_open, cmd_readdir, cmd_read, cmd_write,
+			 cmd_mkdir, cmd_rmdir, cmd_rename, cmd_restore} command;
 
 
 typedef struct {
