@@ -154,7 +154,7 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	request_t *req;
 	response_t resp;
 
-	req = build_req(RAID1, cmd_readdir, path, fi, unused, 0, 0, 0);
+	req = build_req(RAID1, cmd_readdir, path, fi, 0, 0, 0);
 	int sfd = socket_fds[RAID1_MAIN];
 	writen(sfd, req, sizeof(request_t));
 
@@ -197,13 +197,12 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 
 request_t *build_req(int raid, command cmd, const char *path,
-							struct fuse_file_info *fi, status st, size_t file_size, off_t offset, size_t padding_size) {
+							struct fuse_file_info *fi, size_t file_size, off_t offset, size_t padding_size) {
 	request_t *req = malloc(sizeof(request_t));
 	req->raid = raid;
 	req->fn = cmd;
 
 	strcpy(req->f_info.path, path);
-	req->st = st;
 	if (fi != NULL) {
 		req->f_info.padding_size = padding_size;
 		req->f_info.flags = fi->flags;
@@ -270,7 +269,7 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 	printf("wrtie flag -- %d, %d\n", O_WRONLY, O_RDWR);
 	printf("fi flags before -- %d\n", fi->flags);
 
-	request_t *req = build_req(RAID1, cmd_write, path, fi, unused, size, offset, 0);
+	request_t *req = build_req(RAID1, cmd_write, path, fi, size, offset, 0);
 	req->f_info.flags |= O_WRONLY;
 	printf("fi flags after -- %d\n", req->f_info.flags);
 	int sfd0 = socket_fds[RAID1_MAIN];
@@ -316,7 +315,7 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 		printf("FI is NULL\n");
 	}
 	printf("path -- %s\n", path);
-	request_t *req = build_req(RAID1, cmd_open, path, fi, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_open, path, fi, 0, 0, 0);
 	
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
@@ -357,7 +356,7 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	log_server_info(log_file, &strg, RAID1_MAIN);
 	log_msg(log_file, "getattr");
 
-	request_t *req = build_req(RAID1, cmd_getattr, path, NULL, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_getattr, path, NULL, 0, 0, 0);
 
 	int sfd = socket_fds[RAID1_MAIN];
 	writen(sfd, req, sizeof(request_t));
@@ -400,7 +399,7 @@ static void nrfs1_destroy(void* private_data) {
 static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 											 struct fuse_file_info* fi) {
 	printf("nrfs1_read\n");
-	request_t *req = build_req(RAID1, cmd_read, path, fi, unused, size, offset, 0);
+	request_t *req = build_req(RAID1, cmd_read, path, fi, size, offset, 0);
 	
 	req->f_info.flags |= O_RDONLY;
 
@@ -460,7 +459,7 @@ static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
 static int nrfs1_unlink(const char* path) {
 	printf("nrfs1_unlink\n");
 
-	request_t *req = build_req(RAID1, cmd_unlink, path, NULL, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_unlink, path, NULL, 0, 0, 0);
 	
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
@@ -484,7 +483,7 @@ static int nrfs1_unlink(const char* path) {
 static int nrfs1_rmdir(const char* path) {
 	printf("nrfs1_rmdir\n");
 
-	request_t *req = build_req(RAID1, cmd_rmdir, path, NULL, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_rmdir, path, NULL, 0, 0, 0);
 
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
@@ -509,7 +508,7 @@ static int nrfs1_rmdir(const char* path) {
 static int nrfs1_mkdir(const char* path, mode_t mode) {
 	printf("nrfs1_mkdir\n");
 
-	request_t *req = build_req(RAID1, cmd_mkdir, path, NULL, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_mkdir, path, NULL, 0, 0, 0);
 	req->f_info.mode = mode;
 	// printf("mode -- %d\n", mode);
 	int sfd0 = socket_fds[RAID1_MAIN];
@@ -546,7 +545,7 @@ static int nrfs1_releasedir(const char* path, struct fuse_file_info *fi) {
 static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
 	printf("nrfs1_create\n");
 	// printf("mode -- %d\n", mode);
-	request_t *req = build_req(RAID1, cmd_create, path, fi, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_create, path, fi, 0, 0, 0);
 	req->f_info.mode = mode;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
@@ -578,7 +577,7 @@ static int nrfs1_truncate(const char *path, off_t size) {
 static int nrfs1_access(const char *path, int mask)
 {
 	printf("nrfs1_access\n");
-	request_t *req = build_req(RAID1, cmd_access, path, NULL, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_access, path, NULL, 0, 0, 0);
 	req->f_info.mask = mask;
 
 	int sfd0 = socket_fds[RAID1_MAIN];
@@ -604,12 +603,13 @@ static int nrfs1_access(const char *path, int mask)
 
 void cleanup() {
 	fclose(log_file);
+	free(socket_fds);
 }
 
 
 static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 	printf("nrfs1_utimens\n");
-	request_t *req = build_req(RAID1, cmd_utimens, path, NULL, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_utimens, path, NULL, 0, 0, 0);
 	req->f_info.mask = AT_SYMLINK_NOFOLLOW;
 
 	int sfd0 = socket_fds[RAID1_MAIN];
@@ -639,7 +639,7 @@ static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 static int nrfs1_rename(const char *from, const char *to) {
 	printf("nrfs1_rename\n");
 
-	request_t *req = build_req(RAID1, cmd_rename, from, NULL, unused, 0, 0, 0);
+	request_t *req = build_req(RAID1, cmd_rename, from, NULL, 0, 0, 0);
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 

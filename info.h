@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <errno.h>
 #include <assert.h>
 #include <openssl/md5.h>
@@ -81,13 +82,13 @@ typedef struct file_info {
 	off_t f_size;
 	off_t offset;
 	size_t padding_size;
-	// md5_t md5;
 } file_info;
 
 typedef struct {
 	int raid;
 	command fn;
 	status st;
+	bool sendback;
 	file_info f_info;
 } request_t;
 
