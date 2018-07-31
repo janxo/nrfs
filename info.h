@@ -7,8 +7,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <errno.h>
+#include <sys/mman.h>
 #include <assert.h>
 #include <openssl/md5.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <arpa/inet.h>
+#include <stdlib.h>
+
 
 
 
@@ -16,8 +24,10 @@
 #define RAID5 5
 #define RAID1_MAIN 0
 #define RAID1_REPLICANT 1
-
+ 
 #define ATTR_HASH "user.hash"
+#define ATTR_SIZE "user.size"
+#define ATTR_OFFSET "user.offset"
 
 #define FUSE_BUFF_LEN 4096
 
@@ -31,11 +41,13 @@
 #define READ_CHUNK_LEN 32768
 
 
-typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1 , writing = 2, hash_match = 4, hash_mismatch = -4} status;
+typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1,
+			  writing = 2, hash_match = 4, hash_mismatch = -4, no_attr = -5, 
+			  sending_attr = 5, send_to_server = 10, receive_from_server = -10} status;
 
 typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink,
-			 cmd_create, cmd_open, cmd_readdir, cmd_read, cmd_write,
-			 cmd_mkdir, cmd_rmdir, cmd_rename, cmd_restore} command;
+			  cmd_create, cmd_open, cmd_readdir, cmd_read, cmd_write,
+			  cmd_mkdir, cmd_rmdir, cmd_rename, cmd_restore} command;
 
 
 typedef struct {

@@ -28,7 +28,7 @@
 void init(strg_info_t *strg);
 int init_connection(strg_info_t *strg);
 char *get_time();
-int init_server(int *fd, remote *server);
+
 
 
 int *socket_fds;
@@ -39,9 +39,7 @@ MD5_CTX *md5_cont;
 int dead_server;
 
 
-// needed for fuse functions
-// for local functions strg arg is explicitly passed
-strg_info_t *strg_global;
+
 
 
 
@@ -90,7 +88,7 @@ void log_server_info(FILE *f, strg_info_t *strg, int nth_server) {
 
 void *reconnect(void *data) {
  	
-	printf("timeout -- %d\n", strg_global->timeout);
+	printf("timeout -- %d\n", strg.timeout);
 	printf("server to reconnect -- %d\n", dead_server);
 	clock_t begin;
 	double time_spent;
@@ -99,11 +97,11 @@ void *reconnect(void *data) {
 	begin = clock();
 	for (i=0; 1; i++) {
 		printf("trying to reconnect\n");
-		int res = init_server(socket_fds+dead_server, &strg_global->strg.servers[dead_server]);
+		int res = init_server(socket_fds+dead_server, &strg.strg.servers[dead_server]);
 		if (res == 0) break;
 		/* Get CPU time since loop started */
 		time_spent = (double)(clock() - begin) / CLOCKS_PER_SEC;
-		if (time_spent >= strg_global->timeout);
+		if (time_spent >= strg.timeout);
 			printf("couldn't reconnect\n");
 			break;
 	}
@@ -120,7 +118,7 @@ void *reconnect(void *data) {
 }
 
 
-int init_server(int *fd, remote *server) {
+/*int init_server(int *fd, remote *server) {
 	int sfd;
 	struct sockaddr_in addr;
 	int ip;
@@ -141,7 +139,7 @@ int init_server(int *fd, remote *server) {
 		
 	}
 	return res;
-}
+}*/
 
 /** initialize connection to servers */
 int init_connection(strg_info_t *strg) {
@@ -223,21 +221,21 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 
 
-request_t *build_req(int raid, command cmd, const char *path,
-							struct fuse_file_info *fi, size_t file_size, off_t offset, size_t padding_size) {
-	request_t *req = malloc(sizeof(request_t));
-	req->raid = raid;
-	req->fn = cmd;
+// request_t *build_req(int raid, command cmd, const char *path,
+// 							struct fuse_file_info *fi, size_t file_size, off_t offset, size_t padding_size) {
+// 	request_t *req = malloc(sizeof(request_t));
+// 	req->raid = raid;
+// 	req->fn = cmd;
 
-	strcpy(req->f_info.path, path);
-	if (fi != NULL) {
-		req->f_info.padding_size = padding_size;
-		req->f_info.flags = fi->flags;
-		req->f_info.f_size = file_size;
-		req->f_info.offset = offset;
-	}
-	return req;
-}
+// 	strcpy(req->f_info.path, path);
+// 	if (fi != NULL) {
+// 		req->f_info.padding_size = padding_size;
+// 		req->f_info.flags = fi->flags;
+// 		req->f_info.f_size = file_size;
+// 		req->f_info.offset = offset;
+// 	}
+// 	return req;
+// }
 
 
 
@@ -344,63 +342,88 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 	printf("path -- %s\n", path);
 	request_t *req = build_req(RAID1, cmd_open, path, fi, 0, 0, 0);
 	
-	if (dead_server != -1) {
+	if (dead_server == -1) {
 		int sfd0 = socket_fds[RAID1_MAIN];
 		int sfd1 = socket_fds[RAID1_REPLICANT];
 		writen(sfd0, req, sizeof(request_t));
 		writen(sfd1, req, sizeof(request_t));
 
-		status st;
-		readn(sfd0, &st, sizeof(status));
-		if (st == error) {
-			int res;
-			readn(sfd0, &res, sizeof(res));
-			printf("error -- %d\n", -res);
-			free(req);
-			return -res;
-		}
 
+		status st0;
 		status st1;
+
+		readn(sfd0, &st0, sizeof(status));
 		readn(sfd1, &st1, sizeof(status));
-		if (st == error) {
-			int res;
-			readn(sfd1, &res, sizeof(res));
-			printf("error -- %d\n", -res);
-			free(req);
-			return -res;
-		}
+		printf("st0 -- %d\n", st0);
+		printf("st1 -- %d\n", st1);
+		// both server have file with attributes
+		if (st0 == st1 && st0 == sending_attr) {
+			status hash0_match;
+			status hash1_match;
+			// read hash match statuses from servers
+			readn(sfd0, &hash0_match, sizeof(status));
+			readn(sfd1, &hash1_match, sizeof(status));
 
-		// check hashes if both open was successfull
-		md5_t md5_0;
-		md5_t md5_1;
+			printf("hash0_match -- %d\n", hash0_match);
+			printf("hash1_match -- %d\n", hash1_match);
+			// printf("getting hashes\n");
+			// check hashes if both open was successfull
+			md5_t md5_0;
+			md5_t md5_1;
 
-		readn(sfd0, &md5_0.hash, sizeof(md5_0.hash));
-		readn(sfd1, &md5_1.hash, sizeof(md5_1.hash));
+			readn(sfd0, &md5_0.hash, sizeof(md5_0.hash));
+			readn(sfd1, &md5_1.hash, sizeof(md5_1.hash));
 
-		status match = strcmp((const char*)md5_0.hash, (const char*)md5_1.hash);
-		if (match == 0) {
-			match = hash_match;
-			writen(sfd0, &match, sizeof(status));
-			writen(sfd1, &match, sizeof(status));
+			// compare returned hashes
+			int res = strcmp((const char*)md5_0.hash, (const char*)md5_1.hash);
+
+			request_t *restore_req = build_req(RAID1, cmd_restore, path, NULL, 0, 0, 0);
+			if (hash0_match == hash1_match && hash0_match == hash_match) {
+
+				if (res == 0) {
+					printf("both hashes matched\n");
+
+				} else {
+					printf("should copy from server0 to server1\n");
+
+					restore_req->f_info.mode = send_to_server;
+					writen(sfd0, restore_req, sizeof(request_t));
+					writen(sfd0, &strg.strg.servers[RAID1_REPLICANT], sizeof(remote));
+
+					// restore_req->f_info.mode = receive_from_server;
+					// writen(sfd1, restore_req, sizeof(request_t));
+
+				}
+
+			} else if (hash0_match == hash_match && hash1_match != hash_match) {
+				// match = hash_match;
+				printf("hash0 mathed but hash1 did not\n");
+				printf("should copy from server0 to server1\n");
+
+				restore_req->f_info.mode = send_to_server;
+				writen(sfd0, restore_req, sizeof(request_t));
+				writen(sfd0, &strg.strg.servers[RAID1_REPLICANT], sizeof(remote));
+
+				// restore_req->f_info.mode = receive_from_server;
+				// writen(sfd1, restore_req, sizeof(request_t));
+
+			} else if (hash1_match == hash_match && hash0_match != hash_match) {
+				printf("hash1 matched but hash0 did not\n");
+				printf("should copy from server1 to server0\n");
+
+				restore_req->f_info.mode = send_to_server;
+				writen(sfd1, req, sizeof(request_t));
+
+				restore_req->f_info.mode = receive_from_server;
+				writen(sfd0, req, sizeof(request_t));	
+			}
+
 		} else {
-			match = hash_mismatch;
-			writen(sfd0, &match, sizeof(status));
-			writen(sfd1, &match, sizeof(status));
+			if (st0 == no_attr && st1 != no_attr) {
+				printf("should copy from server1 to server0\n");
 
-			status hash0_st;
-			status hash1_st;
-
-			readn(sfd0, &hash0_st, sizeof(status));
-			readn(sfd1, &hash1_st, sizeof(status));
-
-			// request_t *restore_req = build_req(RAID1, cmd_restore, path, )
-
-			if (hash0_st == hash_match && hash1_st == hash_match) {
-
-			} else if (hash0_st == hash_mismatch) {
-
-			} else if (hash1_st == hash_mismatch) {
-
+			} else if (st0 != no_attr && st1 == no_attr) {
+				printf("should copy from server0 to server1\n");
 			}
 		}
 
@@ -432,6 +455,7 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	log_msg(log_file, "getattr");
 
 	request_t *req = build_req(RAID1, cmd_getattr, path, NULL, 0, 0, 0);
+
 
 	int sfd = socket_fds[RAID1_MAIN];
 	// int sfd1 = socket_fds[RAID1_REPLICANT];
@@ -537,10 +561,12 @@ static int nrfs1_unlink(const char* path) {
 	printf("nrfs1_unlink\n");
 
 	request_t *req = build_req(RAID1, cmd_unlink, path, NULL, 0, 0, 0);
-	
+	req->sendback = true;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 	writen(sfd0, req, sizeof(request_t));
+
+	req->sendback = false;
 	writen(sfd1, req, sizeof(request_t));
 
 	status st;
@@ -561,10 +587,12 @@ static int nrfs1_rmdir(const char* path) {
 	printf("nrfs1_rmdir\n");
 
 	request_t *req = build_req(RAID1, cmd_rmdir, path, NULL, 0, 0, 0);
-
+	req->sendback = true;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 	writen(sfd0, req, sizeof(request_t));
+
+	req->sendback = false;
 	writen(sfd1, req, sizeof(request_t));
 
 	status st;
@@ -587,10 +615,13 @@ static int nrfs1_mkdir(const char* path, mode_t mode) {
 
 	request_t *req = build_req(RAID1, cmd_mkdir, path, NULL, 0, 0, 0);
 	req->f_info.mode = mode;
+	req->sendback = true;
 	// printf("mode -- %d\n", mode);
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 	writen(sfd0, req, sizeof(request_t));
+
+	req->sendback = false;
 	writen(sfd1, req, sizeof(request_t));
 
 	status st;
@@ -624,9 +655,12 @@ static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi
 	// printf("mode -- %d\n", mode);
 	request_t *req = build_req(RAID1, cmd_create, path, fi, 0, 0, 0);
 	req->f_info.mode = mode;
+	req->sendback = true;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 	writen(sfd0, req, sizeof(request_t));
+
+	req->sendback = false;
 	writen(sfd1, req, sizeof(request_t));
 
 	status st;
@@ -655,10 +689,13 @@ static int nrfs1_access(const char *path, int mask)
 	printf("nrfs1_access\n");
 	request_t *req = build_req(RAID1, cmd_access, path, NULL, 0, 0, 0);
 	req->f_info.mask = mask;
+	req->sendback = true;
 
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 	writen(sfd0, req, sizeof(request_t));
+
+	req->sendback = false;
 	writen(sfd1, req, sizeof(request_t));
 
 	status st;
@@ -686,6 +723,7 @@ void cleanup() {
 static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 	printf("nrfs1_utimens\n");
 	request_t *req = build_req(RAID1, cmd_utimens, path, NULL, 0, 0, 0);
+	req->sendback = true;
 	req->f_info.mask = AT_SYMLINK_NOFOLLOW;
 
 	int sfd0 = socket_fds[RAID1_MAIN];
@@ -694,6 +732,7 @@ static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 	writen(sfd0, req, sizeof(request_t));
 	writen(sfd0, ts, 2*sizeof(struct timespec));
 
+	req->sendback = false;
 	writen(sfd1, req, sizeof(request_t));
 	writen(sfd1, ts, 2*sizeof(struct timespec));
 
@@ -716,6 +755,7 @@ static int nrfs1_rename(const char *from, const char *to) {
 	printf("nrfs1_rename\n");
 
 	request_t *req = build_req(RAID1, cmd_rename, from, NULL, 0, 0, 0);
+	// req->sendback = true;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 
@@ -725,6 +765,7 @@ static int nrfs1_rename(const char *from, const char *to) {
 	writen(sfd0, &len, sizeof(size_t));
 	writen(sfd0, to, len);
 
+	// req->sendback = false;
 	writen(sfd1, req, sizeof(request_t));
 	writen(sfd1, &len, sizeof(size_t));
 	writen(sfd1, to, len);
@@ -808,7 +849,6 @@ int main(int argc, char *argv[]) {
 	// printf("storage %s\n", argv[2]);
 
 	
-	// strg_global = &strg;
 
 	init_storage(argv[1], argv[2], &strg);
 

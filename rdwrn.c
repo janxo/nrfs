@@ -59,13 +59,13 @@ ssize_t writen(int fd, const void *buffer, size_t n) {
 }
 
 
-size_t sendfilen(int out_fd, int in_fd, off_t offset, size_t count) {
+size_t sendfilen(int out_fd, int in_fd, off_t *offset, size_t count) {
 	ssize_t numWritten = 0;
 	size_t totWritten;
 	printf("\nIN SENDFILEN !!! \n\n");
 	for (totWritten = 0; totWritten < count; ) {
-		numWritten = sendfile(out_fd, in_fd, &offset, count - totWritten);
-		printf("offset -- %lu\n", offset);
+		numWritten = sendfile(out_fd, in_fd, offset, count - totWritten);
+		printf("offset -- %lu\n", *offset);
 		printf("size -- %zu\n", count);
 		if (numWritten <= 0) {
 		if (numWritten == -1 && errno == EINTR)
@@ -96,9 +96,49 @@ void get_hash(void *buff, size_t size, md5_t *md5) {
 	char tmp[128];
 	int i;
 	for (i=0; i <MD5_DIGEST_LENGTH; i++) {
-		sprintf(tmp+i*2, "%02x",md5->hash[i]);
+		sprintf(tmp+i*2, "%02x", md5->hash[i]);
 	}
 
 	memcpy(md5->hash, tmp, 2*MD5_DIGEST_LENGTH);
 	md5->hash[2*MD5_DIGEST_LENGTH] = '\0';
+}
+
+
+int init_server(int *fd, remote *server) {
+	int sfd;
+	struct sockaddr_in addr;
+	int ip;
+
+	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	inet_pton(AF_INET, server->ip_address, &ip);
+	addr.sin_family = AF_INET;
+
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(atoi(server->port));
+	addr.sin_addr.s_addr = ip;
+
+	int res = connect(sfd, (struct sockaddr *) &addr, sizeof(struct sockaddr_in));
+	if (res == 0) {
+		*fd = sfd;
+	} else {
+		fprintf(stderr, "%s\n", "FAILED TO CONNECT");
+		
+	}
+	return res;
+}
+
+request_t *build_req(int raid, command cmd, const char *path,
+							struct fuse_file_info *fi, size_t file_size, off_t offset, size_t padding_size) {
+	request_t *req = malloc(sizeof(request_t));
+	req->raid = raid;
+	req->fn = cmd;
+
+	strcpy(req->f_info.path, path);
+	if (fi != NULL) {
+		req->f_info.padding_size = padding_size;
+		req->f_info.flags = fi->flags;
+		req->f_info.f_size = file_size;
+		req->f_info.offset = offset;
+	}
+	return req;
 }

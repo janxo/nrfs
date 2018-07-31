@@ -115,9 +115,17 @@ static void write1_handler(int cfd, void *buff) {
             writen(cfd, &err, sizeof(err));
         } else {
             res = setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_CREATE);
+            char chunk_size[32];
+            char chunk_offset[32];
+            sprintf(chunk_size, "%zu", req->f_info.f_size);
+            sprintf(chunk_offset, "%lu", req->f_info.offset);
+            setxattr(path, ATTR_SIZE, chunk_size, strlen(chunk_size), XATTR_CREATE);
+            setxattr(path, ATTR_OFFSET, chunk_offset, strlen(chunk_offset), XATTR_CREATE);
             printf("xattr res -- %d -- %d\n", res, -errno);
             if (res == error) {
                 res = setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_REPLACE);
+                setxattr(path, ATTR_SIZE, chunk_size, strlen(chunk_size), XATTR_REPLACE);
+                setxattr(path, ATTR_OFFSET, chunk_offset, strlen(chunk_offset), XATTR_REPLACE);
                 printf("xattr res1 -- %d -- %d\n", res, -errno);
 
 
@@ -167,12 +175,14 @@ static void create1_handler(int cfd, void *buff) {
     // printf("mode -- %d\n", req->f_info.mode);
     status st = open(path, req->f_info.flags, req->f_info.mode);
 
-    writen(cfd, &st, sizeof(status));
-    if (st == error) {
-        int res = errno;
-        writen(cfd, &res, sizeof(res));
-    } else {
-        close(st);
+    if (req->sendback) {
+        writen(cfd, &st, sizeof(status));
+        if (st == error) {
+            int res = errno;
+            writen(cfd, &res, sizeof(res));
+        } else {
+            close(st);
+        }
     }
 
     free(path);
@@ -188,13 +198,63 @@ static void open1_handler(int cfd, void *buff) {
     char *path = build_path(storage_path, req->f_info.path);
     status st = open(path, req->f_info.flags);
 
-    writen(cfd, &st, sizeof(status));
-    if (st == error) {
-        int res = errno;
-        writen(cfd, &res, sizeof(res));
+    status res;
+
+    md5_t md5_attr;
+    int attr_present = getxattr(path, ATTR_HASH, &md5_attr.hash, sizeof(md5_attr.hash));
+
+    if (attr_present == -1) {
+        printf("No attributes yet\n");
+        res = no_attr;
+        writen(cfd, &res, sizeof(status));
     } else {
-        close(st);
+        res = sending_attr;
+        writen(cfd, &res, sizeof(status));
+
+        char chunk_size_str[32];
+        char chunk_offset_str[32];
+        getxattr(path, ATTR_SIZE, chunk_size_str, sizeof(chunk_size_str));
+        getxattr(path, ATTR_OFFSET, chunk_offset_str, sizeof(chunk_offset_str));
+
+        size_t chunk_size = atoi(chunk_size_str);
+        off_t chunk_offset = atoi(chunk_offset_str);
+
+        printf("attr size -- %zu\n", chunk_size);
+        printf("attr ofset -- %lu\n", chunk_offset);
+
+        void *buff = mmap(0, chunk_size, PROT_READ, MAP_SHARED, st, chunk_offset);
+
+        md5_t md5_curr;
+        get_hash(buff, chunk_size, &md5_curr);
+
+        printf("hash_attr -- %s\n", md5_attr.hash);
+        printf("hash_curr -- %s\n", md5_curr.hash);
+
+        int cmp = strcmp((const char*)md5_attr.hash, (const char*)md5_curr.hash);
+        status match;
+        if (cmp == 0) {
+            printf("hash match\n");
+            match = hash_match;
+           
+        } else {
+            printf("hash mismatch\n");
+            match = hash_mismatch;
+        }
+
+        printf("sending status %d\n", match);
+        writen(cfd, &match, sizeof(status));
+        writen(cfd, &md5_curr.hash, sizeof(md5_curr.hash));
+        
+
     }
+
+    // writen(cfd, &st, sizeof(status));
+    // if (st == error) {
+    //     int res = errno;
+    //     writen(cfd, &res, sizeof(res));
+    // } else {
+    //     close(st);
+    // }
 
 
     free(path);
@@ -208,11 +268,13 @@ static void access1_handler(int cfd, void *buff) {
     char *path = build_path(storage_path, req->f_info.path);
     status st = access(path, req->f_info.mask);
 
-    writen(cfd, &st, sizeof(status));
+    if (req->sendback) {
+        writen(cfd, &st, sizeof(status));
 
-    if (st == error) {
-        int res = errno;
-        writen(cfd, &res, sizeof(res));
+        if (st == error) {
+            int res = errno;
+            writen(cfd, &res, sizeof(res));
+        }
     }
 
     free(path);
@@ -239,11 +301,14 @@ static void utimens1_handler(int cfd, void *buff) {
 
     status st = utimensat(AT_FDCWD, path, ts, AT_SYMLINK_NOFOLLOW);
     // printf("stus -- %d\n", st);
-    writen(cfd, &st, sizeof(status));
+    if (req->sendback) {
+        writen(cfd, &st, sizeof(status));
 
-    if (st == error) {
-        int res = errno;
-        writen(cfd, &res, sizeof(res));
+
+        if (st == error) {
+            int res = errno;
+            writen(cfd, &res, sizeof(res));
+        }
     }
 
     free(path);
@@ -257,11 +322,13 @@ static void unlink1_handler(int cfd, void *buff) {
     char *path = build_path(storage_path, req->f_info.path);
 
     status st = unlink(path);
-    writen(cfd, &st, sizeof(status));
+    if (req->sendback) {
+        writen(cfd, &st, sizeof(status));
 
-    if (st == error) {
-        int res = errno;
-        writen(cfd, &res, sizeof(res));
+        if (st == error) {
+            int res = errno;
+            writen(cfd, &res, sizeof(res));
+        }
     }
 
     free(path);
@@ -278,10 +345,12 @@ static void mkdir1_handler(int cfd, void *buff) {
     // printf("path1 -- %s\n", path);
     status st = mkdir(path, req->f_info.mode);
 
-    writen(cfd, &st, sizeof(status));
-    if (st == error) {
-        int res = errno;
-        writen(cfd, &res, sizeof(res));
+    if (req->sendback) {
+        writen(cfd, &st, sizeof(status));
+        if (st == error) {
+            int res = errno;
+            writen(cfd, &res, sizeof(res));
+        }
     }
 
     free(path);
@@ -310,7 +379,6 @@ static void read1_handler(int cfd, void *buff) {
         status dum = dummy;
         writen(cfd, &dum, sizeof(status));
         size_t sent = sendfile(cfd, st, &req->f_info.offset, READ_CHUNK_LEN);
-        // size_t sent = sendfile(cfd, st, &req->f_info.offset, CHUNK_SIZE);
         printf("sent -- %zu\n", sent);
         close(st);
     }
@@ -329,14 +397,15 @@ static void rmdir1_handler(int cfd, void *buff) {
     // printf("path1 -- %s\n", path);
     status st = rmdir(path);
     // printf("status -- %d\n", st);
+    if (req->sendback) {
         writen(cfd, &st, sizeof(status));
-    if (st == error) {
-        int res = errno;
-        writen(cfd, &res, sizeof(res));
+        if (st == error) {
+            int res = errno;
+            writen(cfd, &res, sizeof(res));
+        }
     }
 
     free(path);
-
 
     printf("!!! RMDIR1 DONE !!!\n");
 }
@@ -366,6 +435,34 @@ static void rename1_handler(int cfd, void *buff) {
     free(path);
     free(new_name);
     printf("!!! RENAME1 DONE !!!\n");
+}
+
+
+void restore_handler(int cfd, void *buff) {
+    printf("!!! RESTORE HANDLER !!!\n");
+
+    request_t *req = (request_t *) buff;
+    printf("path -- %s\n", req->f_info.path);
+    if (req->f_info.mode == send_to_server) {
+        printf("should send to server\n");
+        remote send_to_server;
+        readn(cfd, &send_to_server, sizeof(remote));
+
+        printf("addr -- %s\n", send_to_server.ip_address);
+        printf("port -- %s\n", send_to_server.port);
+
+        int sendfd;
+        int res = init_server(&sendfd, &send_to_server);
+        printf("res %d -- fd -- %d\n", res, sendfd);
+
+        req->f_info.mode = receive_from_server;
+        writen(sendfd, req, sizeof(request_t));
+    } else if (req->f_info.mode == receive_from_server) {
+        printf("should receive from server\n");
+    }
+
+
+    printf("!!! RESTORE DONE !!!\n");
 }
 
 void client_handler(int cfd) {
@@ -415,6 +512,8 @@ void client_handler(int cfd) {
                     break;
                 case cmd_rename:
                     rename1_handler(cfd, &req);
+                case cmd_restore:
+                    restore_handler(cfd, &req);
                 default:
                     break;
             }
