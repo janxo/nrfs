@@ -8,11 +8,11 @@ all: client server fuse_client
 client: client.o parse.o tst.o
 	$(CC) net_raid_client.o parse.o tst.o -o net_raid_client​
 
-server: server.o rdwrn.o
-	$(CC) net_raid_server.o rdwrn.o -o net_raid_server -lcrypto
+server: server.o utils.o
+	$(CC) net_raid_server.o utils.o -o net_raid_server -lcrypto -pthread
 
-fuse_client: client.o parse.o tst.o rdwrn.o
-	$(CC) -Wall fuse_client.c $(FUSE) parse.o rdwrn.o tst.o -o fuse_client -lcrypto -pthread
+fuse_client: client.o parse.o tst.o utils.o
+	$(CC) -Wall fuse_client.c $(FUSE) parse.o utils.o tst.o -o fuse_client -lcrypto -pthread
 
 parse: parse.o
 	$(CC) parse.o -o parse
@@ -29,8 +29,8 @@ parse.o: parse.c
 tst.o: tst.c
 	$(CC) $(CFLAGS) tst.c
 
-rdwrn.o: rdwrn.c
-	$(CC) $(CFLAGS) rdwrn.c
+utils.o: utils.c
+	$(CC) $(CFLAGS) utils.c
 
 clean:
 	rm *o *log $(OUT)

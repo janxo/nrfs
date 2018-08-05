@@ -17,12 +17,10 @@
 #include <sys/stat.h>
 #include <sys/sendfile.h>
 #include <sys/mman.h>
-#include "rdwrn.h"
+#include "utils.h"
 #include "info.h"
 #include "parse.h"
 #include "tst.h"
-#include "fuse_client.h"
-
 
 
 void init(strg_info_t *strg);
@@ -31,15 +29,18 @@ char *get_time();
 
 
 
+typedef struct {
+	MD5_CTX md5_cont;
+	md5_t md5;
+	unsigned char digest[16];
+	char name[NAME_LEN];
+} md5_attr_t;
+
 int *socket_fds;
 strg_info_t strg;
 FILE *log_file;
-request_t *write_req;
-MD5_CTX *md5_cont;
+md5_attr_t *md5_attr;
 int dead_server;
-
-
-
 
 
 
@@ -118,29 +119,6 @@ void *reconnect(void *data) {
 }
 
 
-/*int init_server(int *fd, remote *server) {
-	int sfd;
-	struct sockaddr_in addr;
-	int ip;
-
-	sfd = socket(AF_INET, SOCK_STREAM, 0);
-	inet_pton(AF_INET, server->ip_address, &ip);
-	addr.sin_family = AF_INET;
-
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(atoi(server->port));
-	addr.sin_addr.s_addr = ip;
-
-	int res = connect(sfd, (struct sockaddr *) &addr, sizeof(struct sockaddr_in));
-	if (res == 0) {
-		*fd = sfd;
-	} else {
-		fprintf(stderr, "%s\n", "FAILED TO CONNECT");
-		
-	}
-	return res;
-}*/
-
 /** initialize connection to servers */
 int init_connection(strg_info_t *strg) {
 	printf("IN client main\n");
@@ -159,7 +137,7 @@ int init_connection(strg_info_t *strg) {
 
 
 void init(strg_info_t *strg) {
-	md5_cont = NULL;
+	md5_attr = NULL;
 	dead_server = -1;
 	log_file = fopen(strg->errorlog, "a");
 	if (log_file == NULL) {
@@ -221,67 +199,6 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 
 
-// request_t *build_req(int raid, command cmd, const char *path,
-// 							struct fuse_file_info *fi, size_t file_size, off_t offset, size_t padding_size) {
-// 	request_t *req = malloc(sizeof(request_t));
-// 	req->raid = raid;
-// 	req->fn = cmd;
-
-// 	strcpy(req->f_info.path, path);
-// 	if (fi != NULL) {
-// 		req->f_info.padding_size = padding_size;
-// 		req->f_info.flags = fi->flags;
-// 		req->f_info.f_size = file_size;
-// 		req->f_info.offset = offset;
-// 	}
-// 	return req;
-// }
-
-
-
-
-// static void free_md5(MD5_CTX **c) {
-// 	if (*c != NULL) {
-// 		free(*c);
-// 	}
-// 	*c = NULL;
-// }
-
-static status send_file(int sfd, request_t *req, const char *buf, md5_t *md5, int *err) {
-
-	// send request to server
-	write(sfd, req, sizeof(request_t));
-	status st;
-
-	// read file open status from server
-	read(sfd, &st, sizeof(status));
-	
-	if (st == error) {
-		printf("BEFORE READN\n");
-		// read errno
-		read(sfd, err, sizeof(int));
-		printf("errno -- %d\n", *err);
-		return st;
-	} else {
-
-		printf("should send -- %zu bytes\n", req->f_info.f_size);
-
-		// printf("md5 hash size -- %zu\n", sizeof(md5.hash));
-		write(sfd, md5->hash, sizeof(md5->hash));
-		write(sfd, buf, req->f_info.f_size);
-		printf("sent -- %s\n", buf);
-
-		readn(sfd, &st, sizeof(status));
-		if (st == error) {
-			read(sfd, err, sizeof(int));
-			printf("error writing file -- %d\n", *err);
-			return st;
-		}
-	}
-
-	return st;
-}
-
 
 static int nrfs1_write(const char *path, const char *buf, size_t size, off_t offset,
 														struct fuse_file_info *fi) {
@@ -294,23 +211,31 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 
 	request_t *req = build_req(RAID1, cmd_write, path, fi, size, offset, 0);
 	req->f_info.flags |= O_WRONLY;
+	req->sendback = true;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 
 	md5_t md5;
-	// md5_t md5_1;
-	// unsigned char digest[16];
+	
 
-	void *file_chunk = (void *) buf;
-	get_hash(file_chunk, req->f_info.f_size, &md5);
+	// void *file_chunk = (void *) buf;
+	// get_hash(file_chunk, req->f_info.f_size, &md5);
 
-	// MD5_Update(md5_cont, buf, size);
-	// MD5_Final(digest, md5_cont);
-	// md5_tostr(digest, &md5);
+	
+	if (md5_attr == NULL) {
+		md5_attr = malloc(sizeof(md5_attr_t));
+		strcpy(md5_attr->name, path);
+		MD5_Init(&md5_attr->md5_cont);
+	}
+	assert(md5_attr != NULL);
+	
+	MD5_Update(&md5_attr->md5_cont, buf, size);
 
 	// printf("hash0 --- %s\n", md5.hash);
 	// printf("hash1 --- %s\n", md5_1.hash);
-
+	// int i;
+	// for(i = 0; i < MD5_DIGEST_LENGTH; i++) printf("%02x", digest[i]);
+ //   	printf("\n");
 	int err;
 	status st = send_file(sfd0, req, buf, &md5, &err);
 
@@ -377,7 +302,7 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 			// compare returned hashes
 			int res = strcmp((const char*)md5_0.hash, (const char*)md5_1.hash);
 
-			request_t *restore_req = build_req(RAID1, cmd_restore, path, NULL, 0, 0, 0);
+			request_t *restore_req = build_req(RAID1, cmd_restore_file, path, NULL, 0, 0, 0);
 			if (hash0_match == hash1_match && hash0_match == hash_match) {
 
 				if (res == 0) {
@@ -411,11 +336,8 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 				printf("hash1 matched but hash0 did not\n");
 				printf("should copy from server1 to server0\n");
 
-				restore_req->f_info.mode = send_to_server;
-				writen(sfd1, req, sizeof(request_t));
-
-				restore_req->f_info.mode = receive_from_server;
-				writen(sfd0, req, sizeof(request_t));	
+				writen(sfd1, restore_req, sizeof(request_t));
+				writen(sfd1, &strg.strg.servers[RAID1_MAIN], sizeof(remote));
 			}
 
 		} else {
@@ -428,6 +350,7 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 		}
 
 	} else {
+		// some of the server's dead
 		int sfd = 1-dead_server;
 		status st;
 		readn(sfd, &st, sizeof(status));
@@ -440,8 +363,8 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 		}
 	}
 
-	md5_cont = malloc(sizeof(MD5_CTX));
-	MD5_Init(md5_cont);
+	// md5_cont = malloc(sizeof(MD5_CTX));
+	// MD5_Init(md5_cont);
 
 	printf("open was successful\n");
 	free(req);
@@ -464,7 +387,7 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	status st;
 	readn(sfd, &st, sizeof(st));
 
-
+	
 	if (st == error) {
 		printf("STATUS -- %d\n", st);
 		
@@ -552,7 +475,32 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 
 static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
 	printf("nrfs1_release\n");
+	printf("path -- %s\n", path);
+	if (md5_attr != NULL && strcmp(md5_attr->name, path) == 0) {
 
+		request_t *req = build_req(RAID1, cmd_release, path, NULL, 0, 0, 0);
+		req->sendback = false;
+		int sfd0 = socket_fds[RAID1_MAIN];
+		int sfd1 = socket_fds[RAID1_REPLICANT];
+
+		MD5_Final(md5_attr->digest, &md5_attr->md5_cont);
+		md5_tostr(md5_attr->digest, &md5_attr->md5);
+		printf("hash --- %s\n", md5_attr->md5.hash);
+		writen(sfd0, req ,sizeof(request_t));
+
+		writen(sfd0, &md5_attr->md5, sizeof(md5_attr->md5));
+
+		writen(sfd1, req, sizeof(request_t));
+		writen(sfd1, &md5_attr->md5, sizeof(md5_attr->md5));
+
+
+		free(md5_attr);
+		md5_attr = NULL;
+
+		free(req);
+	} 
+
+	
 	return 0;
 }
 
@@ -680,7 +628,7 @@ static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi
 
 static int nrfs1_truncate(const char *path, off_t size) {
 	printf("nrfs1_truncate\n");
-
+	
 	return 0;
 }
 

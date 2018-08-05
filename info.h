@@ -45,9 +45,9 @@ typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1,
 			  writing = 2, hash_match = 4, hash_mismatch = -4, no_attr = -5, 
 			  sending_attr = 5, send_to_server = 10, receive_from_server = -10} status;
 
-typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink,
-			  cmd_create, cmd_open, cmd_readdir, cmd_read, cmd_write,
-			  cmd_mkdir, cmd_rmdir, cmd_rename, cmd_restore} command;
+typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink, cmd_release,
+			  cmd_create, cmd_open, cmd_readdir, cmd_read, cmd_write, cmd_truncate,
+			  cmd_mkdir, cmd_rmdir, cmd_rename, cmd_restore_file, cmd_restore_dir} command;
 
 
 typedef struct {
@@ -92,7 +92,7 @@ typedef struct file_info {
 	int fd;
 	int mask;
 	mode_t mode;
-	off_t f_size;
+	size_t f_size;
 	off_t offset;
 	size_t padding_size;
 } file_info;

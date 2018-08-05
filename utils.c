@@ -1,9 +1,9 @@
 #include <unistd.h>
 #include <errno.h>
-#include "rdwrn.h"
 #include <sys/sendfile.h>
 #include <stdio.h>
 #include <string.h>
+#include "utils.h"
 
 
 ssize_t readn(int fd, const void *buffer, size_t n) {
@@ -58,6 +58,49 @@ ssize_t writen(int fd, const void *buffer, size_t n) {
 	return totWritten;
 }
 
+status send_file(int sfd, request_t *req, const char *buf, md5_t *md5, int *err) {
+
+	// send request to server
+	write(sfd, req, sizeof(request_t));
+	status st;
+
+	// read file open status from server
+	read(sfd, &st, sizeof(status));
+	
+	if (st == error) {
+		printf("BEFORE READN\n");
+		// read errno
+		read(sfd, err, sizeof(int));
+		printf("errno -- %d\n", *err);
+		return st;
+	} else {
+
+		printf("should send -- %zu bytes\n", req->f_info.f_size);
+
+		// printf("md5 hash size -- %zu\n", sizeof(md5->hash));
+		// write(sfd, md5->hash, sizeof(md5->hash));
+		write(sfd, buf, req->f_info.f_size);
+		printf("sent -- %s\n", buf);
+
+		readn(sfd, &st, sizeof(status));
+		if (st == error) {
+			read(sfd, err, sizeof(int));
+			printf("error writing file -- %d\n", *err);
+			return st;
+		}
+	}
+
+	return st;
+}
+
+size_t send_file1(int out_fd, int in_fd, request_t *req, md5_t *md5) {
+	req->sendback = false;
+	writen(out_fd, req, sizeof(request_t));
+	writen(out_fd, &md5->hash, sizeof(md5->hash));
+	size_t sent = sendfile(out_fd, in_fd, &req->f_info.offset, req->f_info.f_size);
+	printf("in send_file1, sent -- %zu\n", sent);
+	return sent;
+}
 
 size_t sendfilen(int out_fd, int in_fd, off_t *offset, size_t count) {
 	ssize_t numWritten = 0;
@@ -122,7 +165,6 @@ int init_server(int *fd, remote *server) {
 		*fd = sfd;
 	} else {
 		fprintf(stderr, "%s\n", "FAILED TO CONNECT");
-		
 	}
 	return res;
 }
