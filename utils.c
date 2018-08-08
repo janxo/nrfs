@@ -176,11 +176,41 @@ request_t *build_req(int raid, command cmd, const char *path,
 	req->fn = cmd;
 
 	strcpy(req->f_info.path, path);
+	req->f_info.padding_size = padding_size;
+	req->f_info.f_size = file_size;
+	req->f_info.offset = offset;
 	if (fi != NULL) {
-		req->f_info.padding_size = padding_size;
 		req->f_info.flags = fi->flags;
-		req->f_info.f_size = file_size;
-		req->f_info.offset = offset;
 	}
 	return req;
+}
+
+
+
+char *get_time() {
+	time_t current_time;
+    char *c_time_string;
+
+    /* Obtain current time. */
+    current_time = time(NULL);
+
+    if (current_time == ((time_t)-1)) {
+        (void) fprintf(stderr, "Failure to obtain the current time.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Convert to local time format. */
+    c_time_string = ctime(&current_time);
+
+    if (c_time_string == NULL) {
+        (void) fprintf(stderr, "Failure to convert the current time.\n");
+        exit(EXIT_FAILURE);
+    }
+	char *res = malloc(strlen(c_time_string)+2);
+	res[0] = '[';
+	strcpy(res+1, c_time_string);
+	int len = strlen(res);
+	res[len-1] = ']';
+	res[len] = '\0';
+	return res;   
 }

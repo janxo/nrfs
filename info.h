@@ -26,8 +26,8 @@
 #define RAID1_REPLICANT 1
  
 #define ATTR_HASH "user.hash"
-#define ATTR_SIZE "user.size"
-#define ATTR_OFFSET "user.offset"
+
+#define ZIPFILE "/zipfile.tar.gz"
 
 #define FUSE_BUFF_LEN 4096
 
@@ -49,12 +49,6 @@ typedef enum {cmd_getattr, cmd_access, cmd_utimens, cmd_unlink, cmd_release,
 			  cmd_create, cmd_open, cmd_readdir, cmd_read, cmd_write, cmd_truncate,
 			  cmd_mkdir, cmd_rmdir, cmd_rename, cmd_restore_file, cmd_restore_dir} command;
 
-
-typedef struct {
-    uint32_t buf[4];
-    uint32_t bits[2];
-    unsigned char in[64];
-} MD5Context_t;
 
 
 typedef struct {

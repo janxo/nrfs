@@ -15,6 +15,8 @@
 #include <dirent.h>
 #include <sys/xattr.h>
 #include <sys/epoll.h>
+#include <sys/wait.h>
+#include "zlib.h"
 #include "utils.h"
 #include "info.h"
 
@@ -93,9 +95,10 @@ static void write1_handler(int cfd, void *buff) {
     request_t *req = (request_t *) buff;
 
     char *path = build_path(storage_path, req->f_info.path);
-
+    printf("path -- %s\n", path);
     status fd = open(path, req->f_info.flags, req->f_info.mode);
-   
+    printf("fd -- %d\n", fd);
+    printf("fsize -- %zu\n", req->f_info.f_size);
     if (req->sendback)
         writen(cfd, &fd, sizeof(status));
     if (fd == error && req->sendback) {
@@ -176,10 +179,10 @@ static void create1_handler(int cfd, void *buff) {
             int res = errno;
             writen(cfd, &res, sizeof(res));
         } else {
-            close(st);
+            // close(st);
         }
     }
-
+    close(st);
     free(path);
 
     printf("!!! CREATE1 DONE !!! \n");
@@ -194,6 +197,7 @@ static void open1_handler(int cfd, void *buff) {
     char *path = build_path(storage_path, req->f_info.path);
     status st = open(path, req->f_info.flags);
     printf("path -- %s\n", path);
+    printf("open status -- %d\n", st);
     status res;
 
     md5_t md5_attr;
@@ -239,7 +243,7 @@ static void open1_handler(int cfd, void *buff) {
         
 
     }
-
+    close(st);
     free(path);
 
     printf("!!! OPEN1 DONE !!! \n");
@@ -409,8 +413,8 @@ static void release1_handler(int cfd, void *buff) {
     request_t *req = (request_t *) buff;
  
     md5_t md5;
+    printf("received path -- %s\n", req->f_info.path);
     char *path = build_path(storage_path, req->f_info.path);
-    printf("path -- %s\n", req->f_info.path);
     readn(cfd, &md5, sizeof(md5_t));
     printf("hash --- %s\n", md5.hash);
     status res = setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_REPLACE);
@@ -441,60 +445,42 @@ static void truncate1_handler(int cfd, void *buff) {
     printf("!!! TRUNCATE1 DONE !!!\n");
 }
 
+
+
 static void restore1_file_handler(int cfd, void *buff) {
-    printf("!!! RESTORE!_FILE HANDLER !!!\n");
+    printf("!!! RESTORE1_FILE HANDLER !!!\n");
 
     request_t *req = (request_t *) buff;
+    remote send_to_server;
+    readn(cfd, &send_to_server, sizeof(remote));
+    int sendfd;
+    init_server(&sendfd, &send_to_server);
+    struct stat stbuf;
+    char *path = build_path(storage_path, req->f_info.path);
+    int fd = open(path, O_RDONLY);
+    fstat(fd, &stbuf);
+    req->fn = cmd_unlink;
+    req->sendback = false;
+    writen(sendfd, req, sizeof(request_t));
+    req->fn = cmd_write;
+    req->f_info.flags = O_CREAT | O_WRONLY;
+    req->f_info.mode = stbuf.st_mode;
+    req->f_info.f_size = stbuf.st_size;
+    req->f_info.offset = 0;
+    
+    md5_t md5;
+    getxattr(path, ATTR_HASH, &md5.hash, sizeof(md5.hash));
+    writen(sendfd, req, sizeof(request_t));
+    
+    sendfile(sendfd, fd, &req->f_info.offset, req->f_info.f_size);
+    // write hashes
+    req->fn = cmd_release;
     printf("path -- %s\n", req->f_info.path);
-    if (req->f_info.mode == send_to_server) {
-        printf("should send to server\n");
-        remote send_to_server;
-        readn(cfd, &send_to_server, sizeof(remote));
-
-        printf("addr -- %s\n", send_to_server.ip_address);
-        printf("port -- %s\n", send_to_server.port);
-
-        int sendfd;
-        int res = init_server(&sendfd, &send_to_server);
-        printf("res %d -- fd -- %d\n", res, sendfd);
-
-        struct stat stbuf;
-        char *path = build_path(storage_path, req->f_info.path);
-        int fd = open(path, O_RDONLY);
-        fstat(fd, &stbuf);
-
-        req->fn = cmd_unlink;
-        req->sendback = false;
-        writen(sendfd, req, sizeof(request_t));
-
-        req->fn = cmd_write;
-        req->f_info.flags = O_CREAT | O_WRONLY;
-        req->f_info.mode = stbuf.st_mode;
-        req->f_info.f_size = stbuf.st_size;
-        req->f_info.offset = 0;
-        
-        md5_t md5;
-        getxattr(path, ATTR_HASH, &md5.hash, sizeof(md5.hash));
-        printf("sending hash -- %s\n", md5.hash);
-        printf("size -- %zu\n", req->f_info.f_size);
-        printf("offset -- %lu \n", req->f_info.offset);
-        writen(sendfd, req, sizeof(request_t));
-
-        
-        sendfile(sendfd, fd, &req->f_info.offset, req->f_info.f_size);
-        req->fn = cmd_release;
-        writen(sendfd, req, sizeof(req));
-        writen(sendfd, &md5, sizeof(md5_t));
-
-        // send_file1(sendfd, fd, req, &md5);
-        
-        free(path);
-
-    } else if (req->f_info.mode == receive_from_server) {
-        printf("should receive from server\n");
-    }
-
-
+    writen(sendfd, req, sizeof(request_t));
+    writen(sendfd, &md5, sizeof(md5_t));
+    close(fd);
+    close(sendfd);
+    free(path);
 
     printf("!!! RESTORE1_FILE DONE !!!\n");
 }
@@ -502,9 +488,57 @@ static void restore1_file_handler(int cfd, void *buff) {
 
 static void restore1_dir_handler(int cfd, void *buff) {
     printf("!!! RESTORE1_DIR HANDLER !!!\n");
-    // რეკურსიულად გადაყევი ფოლდერს და აღადგინე ყველაფერი
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, ZIPFILE);
+    // compress folder
+    if (req->f_info.mode == send_to_server) {
+        printf("should send to server\n");
+        int pid = fork();
+        if (pid == 0) {
+            execl("/bin/tar", "tar", "-czf", path, storage_path, NULL);
+        }
+        int status;
+        wait(&status);
+        // connect to server and send compressed data to it
+        remote send_to_server;
+        readn(cfd, &send_to_server, sizeof(remote));
+    
+        int sendfd;
+        init_server(&sendfd, &send_to_server);
+        struct stat stbuf;
+        int fd = open(path, O_RDONLY);
+        fstat(fd, &stbuf);
+        request_t *send_req = build_req(RAID1, cmd_write, ZIPFILE, NULL, stbuf.st_size, 0, 0);
+        send_req->sendback = false;
+        send_req->f_info.flags = O_CREAT | O_WRONLY;
+        send_req->f_info.mode = stbuf.st_mode;
+    
 
+        writen(sendfd, send_req, sizeof(request_t));
+        sendfile(sendfd, fd, &send_req->f_info.offset, send_req->f_info.f_size);
+        
+        // notify server to decompress received data
+        send_req->fn = cmd_restore_dir;
+        send_req->f_info.mode = receive_from_server;
+        writen(sendfd, send_req, sizeof(request_t));
 
+        close(fd);
+        unlink(path);   // delete compressed data
+        free(path);
+        free(send_req);
+
+    } else if (req->f_info.mode == receive_from_server) {
+        // decompress data and delete compressed data
+        printf("should receive from server\n");
+        int pid;
+        pid = fork();
+        if (pid == 0) {
+            execl("/bin/tar", "tar", "--strip-components", "1", "-xzf", path, "-C", storage_path, NULL);
+        }
+        int status;
+        wait(&status);
+        unlink(path);
+    }
     printf("!!! RESTORE1_DIR DONE !!!\n");
 }
 
@@ -582,7 +616,6 @@ int main(int argc, char* argv[])
     while (1) 
     {
         nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
-        // printf("nfds -- %d\n", nfds);
         int n;
         for (n = 0; n < nfds; ++n) {
             // printf("n -- %d\n", n);
@@ -597,18 +630,7 @@ int main(int argc, char* argv[])
                 pthread_create(&thread_pool[nclients++], NULL, client_handler, &cfd);
             }
         }
-        // // client_handler(cfd);
-        //     switch(fork()) {
-        //         case -1:
-        //             exit(100);
-        //         case 0:
-        //             close(sfd);
-        //             client_handler(cfd);
-        //             exit(0);
-        //         default:
-        //             continue;
-        //             // close(cfd);
-        //     }
+
     }
     close(sfd);
 }

@@ -16,6 +16,7 @@ void get_hash(void *buff, size_t size, md5_t *md5);
 int init_server(int *fd, remote *server);
 status send_file(int sfd, request_t *req, const char *buf, md5_t *md5, int *err);
 size_t send_file1(int out_fd, int in_fd, request_t *req, md5_t *md5);
+char *get_time();
 
 request_t *build_req(int raid, command cmd, const char *path,
 							struct fuse_file_info *fi, size_t file_size, off_t offset, size_t padding_size);
