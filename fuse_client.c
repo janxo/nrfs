@@ -384,13 +384,19 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 		free(req);
 		return -res;
 	} else {
-		readn(sfd, stbuf, sizeof(struct stat));
+		char tmp[32000];
+		// int read_n = readn(sfd, stbuf, sizeof(struct stat));
+		int read_n = read(sfd, tmp, sizeof(tmp));
+		memcpy(stbuf, tmp, sizeof(struct stat));
+		printf("read -- %d\n", read_n);
 	}
 
 
 	// printf("st_mode2 -- %d\n", stbuf->st_mode);
 	// printf("sizeof stbuf -- %zu\n", sizeof(struct stat));
 	printf("st size -- %zu\n", stbuf->st_size);
+	printf("struct stat size -- %zu\n", sizeof(struct stat));
+
 	printf("nrfs1_getattr DONE\n");
 	
 	free(req);
@@ -416,12 +422,12 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 
 	int sfd0 = socket_fds[RAID1_MAIN];
 	writen(sfd0, req, sizeof(request_t));
-	// printf("request sent\n");
+	printf("request sent\n");
 	status st;
 	readn(sfd0, &st, sizeof(status));
-	// printf("status -- %d\n", st);
-	// printf("offset -- %lu\n", offset);
-	// printf("shouldve read -- %zu\n", size);
+	printf("status -- %d\n", st);
+	printf("offset -- %lu\n", offset);
+	printf("shouldve read -- %zu\n", size);
 	size_t read_n = 0;
 	// TODO maybe try to read from second server
 	// this time it just retunrs with errno
@@ -435,21 +441,22 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 	} else {
 		
 		char *tmp = malloc(sizeof(status)+READ_CHUNK_LEN);
-		// printf("before read\n");
+		memset(tmp, 0, sizeof(status)+READ_CHUNK_LEN);
+		printf("before read\n");
 		status dum;
 		int dummy_len = sizeof(status);
 		
-		// printf("should've read -- %zu\n", size);
+		printf("should've read -- %zu\n", size);
 		read_n = read(sfd0, tmp, dummy_len+READ_CHUNK_LEN);
 		
 		memcpy(&dum, tmp, dummy_len);
-		// printf("dummy -- %d\n", dum);
+		printf("dummy -- %d\n", dum);
 		
-		// printf("read -- %zu\n", read_n);
 		read_n -= dummy_len;
-		// printf("tmp -- %s\n", tmp);
+		printf("read -- %zu\n", read_n);
+		printf("tmp -- %s\n", tmp+dummy_len);
 		memcpy(buf, tmp+dummy_len, read_n);
-		if (read_n == -1) read_n = -errno;
+		// if (read_n == -1) read_n = -errno;
 
 		free(tmp);
 	}
@@ -777,8 +784,8 @@ int main(int argc, char *argv[]) {
 	int len = 32;
 	char buff0[len];
 	char buff1[len];
-	char *buff2 = "-f";
-	char *buff3 = "-s";
+	char *buff2 = "-s";
+	char *buff3 = "-f";
 
 	argc = 4;
 	char *fuse_argv[argc];

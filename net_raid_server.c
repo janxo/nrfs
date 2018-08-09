@@ -43,7 +43,6 @@ char *build_path(char *p1, char *p2) {
 }
 
 static void readdir1_handler(int cfd, void *buff) {
-    // response_t resp;
     printf("!!! IN READDIR1 HANDLER !!! \n");
     status st;
     request_t *req = (request_t *) buff;
@@ -121,13 +120,14 @@ static void write1_handler(int cfd, void *buff) {
     
         status res = pwrite(fd, file_chunk, read_n, req->f_info.offset);
         printf("res is -- %d\n", res);
-        if (req->sendback)
+        if (req->sendback) {
             writen(cfd, &res, sizeof(status));
-        if (res == error && req->sendback) {
-            printf("error writing file\n");
-            int err = errno;
-            writen(cfd, &err, sizeof(err));
-        } 
+            if (res == error) {
+                printf("error writing file\n");
+                int err = errno;
+                writen(cfd, &err, sizeof(err));
+            }
+        }
 
         free(file_chunk);
     }
@@ -144,10 +144,15 @@ static void getattr1_handler(int cfd, void *buff) {
 
     request_t *req = (request_t *) buff;
     struct stat stbuf;
+    struct stat stbuf1;
+
     status st;
     char *path = build_path(storage_path, req->f_info.path);
-    st = lstat(path, &stbuf);
-
+    int fd = open(path, O_RDONLY);
+    fstat(fd, &stbuf1);
+    printf("path -- %s\n", path);
+    st = stat(path, &stbuf);
+    printf("st -- %d\n", st);
     writen(cfd, &st, sizeof(st));
     
     if (st == error) {
@@ -157,9 +162,14 @@ static void getattr1_handler(int cfd, void *buff) {
         printf("res is %d\n", res);
         writen(cfd, &res, sizeof(res));
     } else {
-        writen(cfd, &stbuf, sizeof(stbuf));
+        size_t sent = writen(cfd, &stbuf, sizeof(struct stat));
+        printf("struct stat size -- %zu\n", sizeof(struct stat));
+        printf("sent -- %zu\n", sent);
     }
     printf("st size -- %zu\n", stbuf.st_size);
+    printf("st1 size -- %zu\n", stbuf1.st_size);
+
+    close(fd);
     free(path);
     printf("!!! GETATTR DONE !!! \n");
 }
@@ -342,9 +352,9 @@ static void read1_handler(int cfd, void *buff) {
 
     status st = open(path, req->f_info.flags);
     writen(cfd, &st, sizeof(status));
-    // printf("status -- %d\n", st);
-    // printf("offset -- %lu\n", req->f_info.offset);
-    // printf("should send -- %zu\n", req->f_info.f_size);
+    printf("status -- %d\n", st);
+    printf("offset -- %lu\n", req->f_info.offset);
+    printf("should send -- %zu\n", req->f_info.f_size);
     if (st == error) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
@@ -357,9 +367,8 @@ static void read1_handler(int cfd, void *buff) {
         writen(cfd, &dum, sizeof(status));
         size_t sent = sendfile(cfd, st, &req->f_info.offset, READ_CHUNK_LEN);
         printf("sent -- %zu\n", sent);
-        close(st);
     }
-
+    close(st);
     printf("!!! READ1 DONE !!!\n");
 }
 
@@ -479,7 +488,7 @@ static void restore1_file_handler(int cfd, void *buff) {
     writen(sendfd, req, sizeof(request_t));
     writen(sendfd, &md5, sizeof(md5_t));
     close(fd);
-    close(sendfd);
+    // close(sendfd);
     free(path);
 
     printf("!!! RESTORE1_FILE DONE !!!\n");
@@ -550,6 +559,7 @@ void *client_handler(void *data) {
     printf("Before loop\n");
     while (1) {
         printf("IN the loop\n");
+        printf("cfd -- %d\n", cfd);
         data_size = readn (cfd, &req, sizeof(request_t));
 
         if (req.raid == RAID1) {

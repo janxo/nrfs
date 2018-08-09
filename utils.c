@@ -64,10 +64,11 @@ status send_file(int sfd, request_t *req, const char *buf, md5_t *md5, int *err)
 	write(sfd, req, sizeof(request_t));
 	status st;
 
-	// read file open status from server
-	read(sfd, &st, sizeof(status));
+	if (req->sendback)
+		// read file open status from server
+		read(sfd, &st, sizeof(status));
 	
-	if (st == error) {
+	if (req->sendback && st == error) {
 		printf("BEFORE READN\n");
 		// read errno
 		read(sfd, err, sizeof(int));
@@ -77,16 +78,16 @@ status send_file(int sfd, request_t *req, const char *buf, md5_t *md5, int *err)
 
 		printf("should send -- %zu bytes\n", req->f_info.f_size);
 
-		// printf("md5 hash size -- %zu\n", sizeof(md5->hash));
-		// write(sfd, md5->hash, sizeof(md5->hash));
 		write(sfd, buf, req->f_info.f_size);
 		printf("sent -- %s\n", buf);
 
-		readn(sfd, &st, sizeof(status));
-		if (st == error) {
-			read(sfd, err, sizeof(int));
-			printf("error writing file -- %d\n", *err);
-			return st;
+		if (req->sendback) {
+			readn(sfd, &st, sizeof(status));
+			if (st == error) {
+				read(sfd, err, sizeof(int));
+				printf("error writing file -- %d\n", *err);
+				return st;
+			}
 		}
 	}
 

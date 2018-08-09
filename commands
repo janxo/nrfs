@@ -3,3 +3,6 @@
 ./net_raid_server 127.0.0.1 11111 storage3_dir
 
 sudo apt-get install libssl-dev
+
+
+restore-file ურევს 2 რექუესტს აგზავნის
