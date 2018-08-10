@@ -41,6 +41,7 @@ strg_info_t strg;		// global storage info
 FILE *log_file;			// log file_chun
 md5_attr_t *md5_attr;	// used for hashing
 int dead_server;		// index of dead server
+char *writing_file;
 
 
 int get_working_server() {
@@ -117,6 +118,7 @@ int init_connection(strg_info_t *strg) {
 
 void init(strg_info_t *strg) {
 	md5_attr = NULL;
+	writing_file = NULL;
 	dead_server = -1;
 	log_file = fopen(strg->errorlog, "a");
 	if (log_file == NULL) {
@@ -200,15 +202,19 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 	// void *file_chunk = (void *) buf;
 	// get_hash(file_chunk, req->f_info.f_size, &md5);
 
-	
-	if (md5_attr == NULL) {
-		md5_attr = malloc(sizeof(md5_attr_t));
-		strcpy(md5_attr->name, path);
-		MD5_Init(&md5_attr->md5_cont);
+	if (writing_file == NULL) {
+		writing_file = malloc(NAME_LEN);
+		strcpy(writing_file, path);
 	}
-	assert(md5_attr != NULL);
+
+	// if (md5_attr == NULL) {
+	// 	md5_attr = malloc(sizeof(md5_attr_t));
+	// 	strcpy(md5_attr->name, path);
+	// 	MD5_Init(&md5_attr->md5_cont);
+	// }
+	// assert(md5_attr != NULL);
 	
-	MD5_Update(&md5_attr->md5_cont, buf, size);
+	// MD5_Update(&md5_attr->md5_cont, buf, size);
 
 	// printf("hash0 --- %s\n", md5.hash);
 	// printf("hash1 --- %s\n", md5_1.hash);
@@ -234,128 +240,194 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 }
 
 
-void restore_file(request_t *restore_req, int from) {
-	restore_req->f_info.mode = send_to_server;
-	writen(from, restore_req, sizeof(request_t));
-	writen(from, &strg.strg.servers[RAID1_REPLICANT], sizeof(remote));
+void restore_file(request_t *restore_req, int nth_server) {
+	// restore_req->f_info.mode = send_to_server;
+	int sfd = socket_fds[nth_server];
+	printf("from -- %d\n", nth_server);
+	restore_req->sendback = false;
+	printf("addr -- %s\n", strg.strg.servers[1-nth_server].ip_address);
+	printf("port -- %s\n", strg.strg.servers[1-nth_server].port);
+	writen(sfd, restore_req, sizeof(request_t));
+	writen(sfd, &strg.strg.servers[1-nth_server], sizeof(remote));
+	// status st;
+	// readn(from, &st, sizeof(status));
+	// printf("restore status -- %d\n", st);
+	// sleep(2);
+
 }
+
 
 static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 	printf("nrfs1_open\n");
-	if (fi == NULL) {
-		printf("FI is NULL\n");
-	}
 	printf("path -- %s\n", path);
 	request_t *req = build_req(RAID1, cmd_open, path, fi, 0, 0, 0);
-	
+
 	if (dead_server == -1) {
 		int sfd0 = socket_fds[RAID1_MAIN];
 		int sfd1 = socket_fds[RAID1_REPLICANT];
 		writen(sfd0, req, sizeof(request_t));
 		writen(sfd1, req, sizeof(request_t));
 
+		status hash0_match, hash1_match;
+		md5_t md5_0, md5_1;
 
-		status st0;
-		status st1;
+		readn(sfd0, &hash0_match, sizeof(status));
+		readn(sfd1, &hash1_match, sizeof(status));
 
-		readn(sfd0, &st0, sizeof(status));
-		readn(sfd1, &st1, sizeof(status));
-		printf("st0 -- %d\n", st0);
-		printf("st1 -- %d\n", st1);
+		printf("hash0_match -- %d\n", hash0_match);
+		printf("hash1_match -- %d\n", hash1_match);
 
-		md5_t md5_0;
-		md5_t md5_1;
+		readn(sfd0, &md5_0, sizeof(md5_t));
+		readn(sfd1, &md5_1, sizeof(md5_t));
 
-		request_t *restore_req = build_req(RAID1, cmd_restore_file, path, NULL, 0, 0, 0);
+		request_t *restore_req = build_req(RAID1, cmd_restore_file, path, NULL, 0, 0, 0);		
 
-		// both server have file with attributes
-		if (st0 == st1 && st0 == sending_attr) {
-			status hash0_match;
-			status hash1_match;
-			// read hash match statuses from servers
-			readn(sfd0, &hash0_match, sizeof(status));
-			readn(sfd1, &hash1_match, sizeof(status));
-
-			printf("hash0_match -- %d\n", hash0_match);
-			printf("hash1_match -- %d\n", hash1_match);
-			// printf("getting hashes\n");
-			// check hashes if both open was successfull
-			
-
-			readn(sfd0, &md5_0.hash, sizeof(md5_0.hash));
-			readn(sfd1, &md5_1.hash, sizeof(md5_1.hash));
-
-			// compare returned hashes
-			int res = strcmp((const char*)md5_0.hash, (const char*)md5_1.hash);
-
-			
-			if (hash0_match == hash1_match && hash0_match == hash_match) {
-
-				if (res == 0) {
-					printf("both hashes matched\n");
-
-				} else {	
-					printf("should copy from server0 to server1\n");
-
-					// writen(sfd0, restore_req, sizeof(request_t));
-					// writen(sfd0, &strg.strg.servers[RAID1_REPLICANT], sizeof(remote));
-					restore_file(restore_req, sfd0);
-				
-				}
-
-			} else if (hash0_match == hash_match && hash1_match != hash_match) {
-				// match = hash_match;
-				printf("hash0 mathed but hash1 did not\n");
+		if (hash0_match != hash0_match && hash1_match != hash_match) {
+			printf("something bad happened -- both hashes mismatched\n");
+		} else if (hash0_match == hash_match && hash1_match == hash_mismatch) {
+			printf("hash0 matched but hash1 did not\n");
+			printf("should copy from server0 to server1\n");
+			restore_file(restore_req, RAID1_MAIN);
+		} else if (hash0_match == hash_mismatch && hash1_match == hash_match) {
+			printf("hash1 matched but hash0 did not\n");
+			printf("should copy from server1 to server0\n");
+			restore_file(restore_req, RAID1_REPLICANT);
+		} else if (hash0_match == hash1_match && hash0_match == hash_match) {
+			printf("both hashes matched, now comparing each\n");
+			if (strcmp((const char*)md5_0.hash, (const char*)md5_1.hash) != 0) {
 				printf("should copy from server0 to server1\n");
-
-				// writen(sfd0, restore_req, sizeof(request_t));
-				// writen(sfd0, &strg.strg.servers[RAID1_REPLICANT], sizeof(remote));
-				restore_file(restore_req, sfd0);
-
-			} else if (hash1_match == hash_match && hash0_match != hash_match) {
-				printf("hash1 matched but hash0 did not\n");
-				printf("should copy from server1 to server0\n");
-
-				// writen(sfd1, restore_req, sizeof(request_t));
-				// writen(sfd1, &strg.strg.servers[RAID1_MAIN], sizeof(remote));
-				restore_file(restore_req, sfd1);
-			}
-
-		} else {
-			if (st0 == no_attr && st1 != no_attr) {
-				printf("server0 no attr\n");
-				printf("should copy from server1 to server0\n");
-				readn(sfd1, &md5_1.hash, sizeof(md5_1.hash));
-				restore_file(restore_req, sfd1);
-
-			} else if (st0 != no_attr && st1 == no_attr) {
-				printf("server1 no attr\n");
-				printf("should copy from server0 to server1\n");
-				readn(sfd0, &md5_0.hash, sizeof(md5_0.hash));
-				restore_file(restore_req, sfd0);
+				restore_file(restore_req, RAID1_MAIN);
 			}
 		}
 
-	} else {
-		// some of the server's dead
-		printf("in open else \n");
-		int sfd = 1-dead_server;
-		status st;
-		readn(sfd, &st, sizeof(status));
-		if (st == error) {
-			int res;
-			readn(sfd, &res, sizeof(res));
-			printf("error -- %d\n", -res);
-			free(req);
-			return -res;
-		}
 	}
-
-
-	printf("open was successful\n");
-	free(req);
 	return 0;
 }
+
+// static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
+// 	printf("nrfs1_open\n");
+// 	if (fi == NULL) {
+// 		printf("FI is NULL\n");
+// 	}
+// 	printf("path -- %s\n", path);
+// 	request_t *req = build_req(RAID1, cmd_open, path, fi, 0, 0, 0);
+	
+// 	if (dead_server == -1) {
+// 		int sfd0 = socket_fds[RAID1_MAIN];
+// 		int sfd1 = socket_fds[RAID1_REPLICANT];
+// 		writen(sfd0, req, sizeof(request_t));
+// 		writen(sfd1, req, sizeof(request_t));
+
+// 		// status open_status0, open_status1;
+// 		// readn(sfd0, &open_status0, sizeof(status));
+// 		// readn(sfd1, &open_status1, sizeof(status));
+
+// 		status st0, st1;
+
+// 		readn(sfd0, &st0, sizeof(status));
+// 		readn(sfd1, &st1, sizeof(status));
+// 		printf("st0 -- %d\n", st0);
+// 		printf("st1 -- %d\n", st1);
+
+// 		md5_t md5_0;
+// 		md5_t md5_1;
+
+// 		request_t *restore_req = build_req(RAID1, cmd_restore_file, path, NULL, 0, 0, 0);
+
+// 		// both server have file with attributes
+// 		if (st0 == st1 && st0 == sending_attr) {
+// 			status hash0_match;
+// 			status hash1_match;
+// 			// read hash match statuses from servers
+// 			readn(sfd0, &hash0_match, sizeof(status));
+// 			readn(sfd1, &hash1_match, sizeof(status));
+
+// 			printf("hash0_match -- %d\n", hash0_match);
+// 			printf("hash1_match -- %d\n", hash1_match);
+// 			// printf("getting hashes\n");
+// 			// check hashes if both open was successfull
+			
+
+// 			readn(sfd0, &md5_0, sizeof(md5_t));
+// 			readn(sfd1, &md5_1, sizeof(md5_t));
+
+// 			// compare returned hashes
+// 			int res = strcmp((const char*)md5_0.hash, (const char*)md5_1.hash);
+
+			
+// 			if (hash0_match == hash1_match && hash0_match == hash_match) {
+
+// 				if (res == 0) {
+// 					printf("both hashes matched\n");
+
+// 				} else {	
+// 					printf("should copy from server0 to server1\n");
+
+// 					// writen(sfd0, restore_req, sizeof(request_t));
+// 					// writen(sfd0, &strg.strg.servers[RAID1_REPLICANT], sizeof(remote));
+// 					restore_file(restore_req, sfd0);
+				
+// 				}
+
+// 			} else if (hash0_match == hash_match && hash1_match != hash_match) {
+// 				// match = hash_match;
+// 				printf("hash0 mathed but hash1 did not\n");
+// 				printf("should copy from server0 to server1\n");
+
+// 				// writen(sfd0, restore_req, sizeof(request_t));
+// 				// writen(sfd0, &strg.strg.servers[RAID1_REPLICANT], sizeof(remote));
+// 				restore_file(restore_req, sfd0);
+
+// 			} else if (hash1_match == hash_match && hash0_match != hash_match) {
+// 				printf("hash1 matched but hash0 did not\n");
+// 				printf("should copy from server1 to server0\n");
+
+// 				// writen(sfd1, restore_req, sizeof(request_t));
+// 				// writen(sfd1, &strg.strg.servers[RAID1_MAIN], sizeof(remote));
+// 				restore_file(restore_req, sfd1);
+// 			}
+
+// 		} else {
+// 			if (st0 == no_attr && st1 != no_attr) {
+// 				printf("server0 no attr\n");
+// 				printf("should copy from server1 to server0\n");
+// 				status hash1_match;
+// 				readn(sfd1, &hash1_match, sizeof(status));
+// 				readn(sfd1, &md5_1.hash, sizeof(md5_1.hash));
+// 				restore_file(restore_req, sfd1);
+
+// 			} else if (st0 != no_attr && st1 == no_attr) {
+// 				printf("server1 no attr\n");
+// 				printf("should copy from server0 to server1\n");
+// 				status hash0_match;
+// 				readn(sfd0, &hash0_match, sizeof(status));
+// 				readn(sfd0, &md5_0.hash, sizeof(md5_0.hash));
+// 				restore_file(restore_req, sfd0);
+// 			}
+// 		}
+
+// 	} else {
+// 		// some of the server's dead
+// 		printf("in open else \n");
+// 		// int sfd = 1-dead_server;
+// 		int sfd = socket_fds[RAID1_MAIN];
+// 		writen(sfd, req, sizeof(request_t));
+// 		status st;
+// 		readn(sfd, &st, sizeof(status));
+// 		if (st == error) {
+// 			int res;
+// 			readn(sfd, &res, sizeof(res));
+// 			printf("error -- %d\n", -res);
+// 			free(req);
+// 			return -res;
+// 		}
+// 	}
+
+
+// 	printf("open was successful\n");
+// 	free(req);
+// 	return 0;
+// }
 
 static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	printf("nrfs1_getattr\n");
@@ -384,10 +456,11 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 		free(req);
 		return -res;
 	} else {
-		char tmp[32000];
-		// int read_n = readn(sfd, stbuf, sizeof(struct stat));
-		int read_n = read(sfd, tmp, sizeof(tmp));
-		memcpy(stbuf, tmp, sizeof(struct stat));
+		// char tmp[32000];
+		
+		// int read_n = read(sfd, tmp, sizeof(tmp));
+		// memcpy(stbuf, tmp, sizeof(struct stat));
+		int read_n = readn(sfd, stbuf, sizeof(struct stat));
 		printf("read -- %d\n", read_n);
 	}
 
@@ -469,26 +542,28 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
 	printf("nrfs1_release\n");
 	printf("path -- %s\n", path);
-	if (md5_attr != NULL && strcmp(md5_attr->name, path) == 0) {
+	// md5_attr != NULL && strcmp(md5_attr->name, path)
+	if (writing_file != NULL && strcmp(writing_file, path)== 0) {
 		printf("sending hashes\n");
 		request_t *req = build_req(RAID1, cmd_release, path, NULL, 0, 0, 0);
 		req->sendback = false;
 		int sfd0 = socket_fds[RAID1_MAIN];
 		int sfd1 = socket_fds[RAID1_REPLICANT];
 
-		MD5_Final(md5_attr->digest, &md5_attr->md5_cont);
-		md5_tostr(md5_attr->digest, &md5_attr->md5);
-		printf("hash --- %s\n", md5_attr->md5.hash);
+		// MD5_Final(md5_attr->digest, &md5_attr->md5_cont);
+		// md5_tostr(md5_attr->digest, &md5_attr->md5);
+		// printf("hash --- %s\n", md5_attr->md5.hash);
 		writen(sfd0, req ,sizeof(request_t));
-		writen(sfd0, &md5_attr->md5, sizeof(md5_attr->md5));
-
+		// writen(sfd0, &md5_attr->md5, sizeof(md5_attr->md5));
+		// printf("sizeof md5attr -- %zu\n", sizeof(md5_attr->md5));
 		writen(sfd1, req, sizeof(request_t));
-		writen(sfd1, &md5_attr->md5, sizeof(md5_attr->md5));
+		// writen(sfd1, &md5_attr->md5, sizeof(md5_attr->md5));
 
 
-		free(md5_attr);
-		md5_attr = NULL;
-
+		// free(md5_attr);
+		// md5_attr = NULL;
+		free(writing_file);
+		writing_file = NULL;
 		free(req);
 	} 
 

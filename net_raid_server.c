@@ -199,8 +199,56 @@ static void create1_handler(int cfd, void *buff) {
 }
 
 
-
 static void open1_handler(int cfd, void *buff) {
+    printf("!!! OPEN1 HANDLER !!!\n");
+    request_t *req = (request_t *) buff;
+    char *path = build_path(storage_path, req->f_info.path);
+    status st = open(path, req->f_info.flags);
+    printf("path -- %s\n", path);
+    printf("open status -- %d\n", st);
+
+    md5_t md5_attr;
+    status match;
+
+    int attr_present = getxattr(path, ATTR_HASH, &md5_attr.hash, sizeof(md5_attr.hash));
+    struct stat stbuf;
+    fstat(st, &stbuf);
+
+    if (attr_present == -1 || stbuf.st_size == 0) {
+        printf("no attr or size is 0\n");
+        match = hash_mismatch;
+        memset(&md5_attr, 0, sizeof(md5_attr));
+    } else {
+        
+        int fd = open(path, O_RDONLY);
+        void *buff = mmap(NULL, stbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+        printf("errno -- %d\n", errno);
+        assert(buff != MAP_FAILED);
+        md5_t md5_curr;
+        get_hash(buff, stbuf.st_size, &md5_curr);
+
+        int cmp = strcmp((const char*)md5_attr.hash, (const char*)md5_curr.hash);
+
+        if (cmp == 0) {
+            printf("hash match\n");
+            match = hash_match;
+           
+        } else {
+            printf("hash mismatch\n");
+            match = hash_mismatch;
+        }
+        close(fd);
+    }
+
+    writen(cfd, &match, sizeof(status));
+    writen(cfd, &md5_attr, sizeof(md5_t));
+
+    close(st);
+    free(path);
+    printf("!!! OPEN1 DONE !!! \n");
+}
+
+/*static void open1_handler(int cfd, void *buff) {
     printf("!!! OPEN1 HANDLER !!!\n");
 
     request_t *req = (request_t *) buff;
@@ -208,26 +256,39 @@ static void open1_handler(int cfd, void *buff) {
     status st = open(path, req->f_info.flags);
     printf("path -- %s\n", path);
     printf("open status -- %d\n", st);
+
+    // writen(cfd, &st, sizeof(status));
+    // if (st == -1) {
+    //     writen(cfd, &errno, sizeof(errno));
+    // }
     status res;
 
     md5_t md5_attr;
       
     int attr_present = getxattr(path, ATTR_HASH, &md5_attr.hash, sizeof(md5_attr.hash));
+    printf("attr_present -- %d\n", attr_present);
+    struct stat stbuf;
+    fstat(st, &stbuf);
 
-    if (attr_present == -1) {
+    if (attr_present == -1 || stbuf.st_size == 0) {
         printf("No attributes yet\n");
         res = no_attr;
         writen(cfd, &res, sizeof(status));
+        // status match = hash_mismatch;
+        // writen(cfd, &match, sizeof(status));
+        // memset(&md5_attr, 0, sizeof(md5_attr));
+        // writen(cfd, &md5_attr, sizeof(md5_attr));
     } else {
         res = sending_attr;
-        writen(cfd, &res, sizeof(status));
+        printf("res -- %d\n", res);
+        int sent = writen(cfd, &res, sizeof(status));
+        printf("sent -- %d\n", sent);
 
-        struct stat stbuf;
-        fstat(st, &stbuf);
 
-
-        void *buff = mmap(0, stbuf.st_size, PROT_READ, MAP_SHARED, st, 0);
-
+        int fd = open(path, O_RDONLY);
+        void *buff = mmap(NULL, stbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+        printf("errno -- %d\n", errno);
+        assert(buff != MAP_FAILED);
         md5_t md5_curr;
         get_hash(buff, stbuf.st_size, &md5_curr);
 
@@ -249,15 +310,16 @@ static void open1_handler(int cfd, void *buff) {
 
         printf("sending status %d\n", match);
         writen(cfd, &match, sizeof(status));
-        writen(cfd, &md5_curr.hash, sizeof(md5_curr.hash));
+        writen(cfd, &md5_attr, sizeof(md5_t));
         
-
+        munmap(buff, stbuf.st_size);
+        close(fd);
     }
     close(st);
     free(path);
 
     printf("!!! OPEN1 DONE !!! \n");
-}
+}*/
 
 static void access1_handler(int cfd, void *buff) {
     printf("!!! ACCESS1 HANDLER !!!\n");
@@ -424,13 +486,19 @@ static void release1_handler(int cfd, void *buff) {
     md5_t md5;
     printf("received path -- %s\n", req->f_info.path);
     char *path = build_path(storage_path, req->f_info.path);
-    readn(cfd, &md5, sizeof(md5_t));
+    int fd = open(path, O_RDONLY);
+    struct stat stbuf;
+    fstat(fd, &stbuf);
+   
+    void *file = mmap(NULL, stbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    assert(buff != MAP_FAILED);
+    get_hash(file, stbuf.st_size, &md5);
     printf("hash --- %s\n", md5.hash);
     status res = setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_REPLACE);
     if (res == error) {
         setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_CREATE);
     }
-
+    munmap(file, stbuf.st_size);
     free(path);
 
     printf("!!! RELEASE1 DONE !!!\n");
@@ -463,6 +531,8 @@ static void restore1_file_handler(int cfd, void *buff) {
     remote send_to_server;
     readn(cfd, &send_to_server, sizeof(remote));
     int sendfd;
+    printf("addr -- %s\n", send_to_server.ip_address);
+    printf("port -- %s\n", send_to_server.port);
     init_server(&sendfd, &send_to_server);
     struct stat stbuf;
     char *path = build_path(storage_path, req->f_info.path);
@@ -477,8 +547,8 @@ static void restore1_file_handler(int cfd, void *buff) {
     req->f_info.f_size = stbuf.st_size;
     req->f_info.offset = 0;
     
-    md5_t md5;
-    getxattr(path, ATTR_HASH, &md5.hash, sizeof(md5.hash));
+    // md5_t md5;
+    // getxattr(path, ATTR_HASH, &md5.hash, sizeof(md5.hash));
     writen(sendfd, req, sizeof(request_t));
     
     sendfile(sendfd, fd, &req->f_info.offset, req->f_info.f_size);
@@ -486,7 +556,7 @@ static void restore1_file_handler(int cfd, void *buff) {
     req->fn = cmd_release;
     printf("path -- %s\n", req->f_info.path);
     writen(sendfd, req, sizeof(request_t));
-    writen(sendfd, &md5, sizeof(md5_t));
+    // writen(sendfd, &md5, sizeof(md5_t));
     close(fd);
     // close(sendfd);
     free(path);
