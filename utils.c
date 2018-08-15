@@ -13,7 +13,7 @@ ssize_t readn(int fd, const void *buffer, size_t n) {
 	char *buf;
 
 	buf = (char *) buffer;
-	printf("\n\nin readn before loop\n\n");
+	// printf("\n\nin readn before loop\n\n");
 	for (totRead = 0; totRead < n; ) {
 		// printf("in da loop");
 		numRead = read(fd, buf, n - totRead);
@@ -120,7 +120,6 @@ int init_server(int *fd, remote *server) {
 	int sfd;
 	struct sockaddr_in addr;
 	int ip;
-
 	sfd = socket(AF_INET, SOCK_STREAM, 0);
 	inet_pton(AF_INET, server->ip_address, &ip);
 	addr.sin_family = AF_INET;
@@ -144,10 +143,12 @@ void build_req(request_t *req, int raid, command cmd, const char *path,
 	req->raid = raid;
 	req->fn = cmd;
 
-	strcpy(req->f_info.path, path);
+	
 	req->f_info.padding_size = padding_size;
 	req->f_info.f_size = file_size;
 	req->f_info.offset = offset;
+	if (path != NULL)
+		strcpy(req->f_info.path, path);
 	if (fi != NULL) {
 		req->f_info.flags = fi->flags;
 	}
