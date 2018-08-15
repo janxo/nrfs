@@ -116,7 +116,7 @@ static void write1_handler(int cfd, void *buff) {
         // printf("received hash-- %s\n", md5.hash);
         read_n = readn(cfd, file_chunk, req->f_info.f_size);
         printf("read -- %d\n", read_n);
-        printf("received file-- %s\n", file_chunk);
+        // printf("received file-- %s\n", file_chunk);
     
         status res = pwrite(fd, file_chunk, read_n, req->f_info.offset);
         printf("res is -- %d\n", res);
@@ -144,12 +144,10 @@ static void getattr1_handler(int cfd, void *buff) {
 
     request_t *req = (request_t *) buff;
     struct stat stbuf;
-    struct stat stbuf1;
 
     status st;
     char *path = build_path(storage_path, req->f_info.path);
     int fd = open(path, O_RDONLY);
-    fstat(fd, &stbuf1);
     printf("path -- %s\n", path);
     st = stat(path, &stbuf);
     printf("st -- %d\n", st);
@@ -167,7 +165,6 @@ static void getattr1_handler(int cfd, void *buff) {
         printf("sent -- %zu\n", sent);
     }
     printf("st size -- %zu\n", stbuf.st_size);
-    printf("st1 size -- %zu\n", stbuf1.st_size);
 
     close(fd);
     free(path);
@@ -242,84 +239,13 @@ static void open1_handler(int cfd, void *buff) {
 
     writen(cfd, &match, sizeof(status));
     writen(cfd, &md5_attr, sizeof(md5_t));
+    writen(cfd, &stbuf.st_size, sizeof(stbuf.st_size));
 
     close(st);
     free(path);
     printf("!!! OPEN1 DONE !!! \n");
 }
 
-/*static void open1_handler(int cfd, void *buff) {
-    printf("!!! OPEN1 HANDLER !!!\n");
-
-    request_t *req = (request_t *) buff;
-    char *path = build_path(storage_path, req->f_info.path);
-    status st = open(path, req->f_info.flags);
-    printf("path -- %s\n", path);
-    printf("open status -- %d\n", st);
-
-    // writen(cfd, &st, sizeof(status));
-    // if (st == -1) {
-    //     writen(cfd, &errno, sizeof(errno));
-    // }
-    status res;
-
-    md5_t md5_attr;
-      
-    int attr_present = getxattr(path, ATTR_HASH, &md5_attr.hash, sizeof(md5_attr.hash));
-    printf("attr_present -- %d\n", attr_present);
-    struct stat stbuf;
-    fstat(st, &stbuf);
-
-    if (attr_present == -1 || stbuf.st_size == 0) {
-        printf("No attributes yet\n");
-        res = no_attr;
-        writen(cfd, &res, sizeof(status));
-        // status match = hash_mismatch;
-        // writen(cfd, &match, sizeof(status));
-        // memset(&md5_attr, 0, sizeof(md5_attr));
-        // writen(cfd, &md5_attr, sizeof(md5_attr));
-    } else {
-        res = sending_attr;
-        printf("res -- %d\n", res);
-        int sent = writen(cfd, &res, sizeof(status));
-        printf("sent -- %d\n", sent);
-
-
-        int fd = open(path, O_RDONLY);
-        void *buff = mmap(NULL, stbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
-        printf("errno -- %d\n", errno);
-        assert(buff != MAP_FAILED);
-        md5_t md5_curr;
-        get_hash(buff, stbuf.st_size, &md5_curr);
-
-        printf("hash_attr -- %s\n", md5_attr.hash);
-        printf("hash_curr -- %s\n", md5_curr.hash);
-
-        int cmp = strcmp((const char*)md5_attr.hash, (const char*)md5_curr.hash);
-
-
-        status match;
-        if (cmp == 0) {
-            printf("hash match\n");
-            match = hash_match;
-           
-        } else {
-            printf("hash mismatch\n");
-            match = hash_mismatch;
-        }
-
-        printf("sending status %d\n", match);
-        writen(cfd, &match, sizeof(status));
-        writen(cfd, &md5_attr, sizeof(md5_t));
-        
-        munmap(buff, stbuf.st_size);
-        close(fd);
-    }
-    close(st);
-    free(path);
-
-    printf("!!! OPEN1 DONE !!! \n");
-}*/
 
 static void access1_handler(int cfd, void *buff) {
     printf("!!! ACCESS1 HANDLER !!!\n");
@@ -425,9 +351,18 @@ static void read1_handler(int cfd, void *buff) {
         // when file size is 0
         // client will block on read if we don't send anyhting
         // so we send dummy bytes
-        status dum = dummy;
-        writen(cfd, &dum, sizeof(status));
-        size_t sent = sendfile(cfd, st, &req->f_info.offset, READ_CHUNK_LEN);
+        // status dum = dummy;
+        // writen(cfd, &dum, sizeof(status));
+        size_t toSend = 0;
+        struct stat stbuf;
+        fstat(st, &stbuf);
+        toSend = stbuf.st_size - req->f_info.offset;
+        if (toSend > req->f_info.f_size) {
+            toSend = req->f_info.f_size;
+        }
+        printf("toSend -- %zu\n", toSend);
+        writen(cfd, &toSend, sizeof(size_t));
+        size_t sent = sendfile(cfd, st, &req->f_info.offset, toSend);
         printf("sent -- %zu\n", sent);
     }
     close(st);
@@ -467,12 +402,13 @@ static void rename1_handler(int cfd, void *buff) {
     char *new_name = build_path(storage_path, to);
 
     status st = rename(path, new_name);
+    if (req->sendback) {
     writen(cfd, &st, sizeof(status));
-    if (st == error) {
-        int res = errno;
-        writen(cfd, &res, sizeof(res));
+        if (st == error) {
+            int res = errno;
+            writen(cfd, &res, sizeof(res));
+        }
     }
-
     free(path);
     free(new_name);
     printf("!!! RENAME1 DONE !!!\n");
@@ -499,6 +435,8 @@ static void release1_handler(int cfd, void *buff) {
         setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_CREATE);
     }
     munmap(file, stbuf.st_size);
+
+    close(fd);
     free(path);
 
     printf("!!! RELEASE1 DONE !!!\n");
@@ -558,7 +496,7 @@ static void restore1_file_handler(int cfd, void *buff) {
     writen(sendfd, req, sizeof(request_t));
     // writen(sendfd, &md5, sizeof(md5_t));
     close(fd);
-    // close(sendfd);
+    close(sendfd);
     free(path);
 
     printf("!!! RESTORE1_FILE DONE !!!\n");
@@ -587,24 +525,24 @@ static void restore1_dir_handler(int cfd, void *buff) {
         struct stat stbuf;
         int fd = open(path, O_RDONLY);
         fstat(fd, &stbuf);
-        request_t *send_req = build_req(RAID1, cmd_write, ZIPFILE, NULL, stbuf.st_size, 0, 0);
-        send_req->sendback = false;
-        send_req->f_info.flags = O_CREAT | O_WRONLY;
-        send_req->f_info.mode = stbuf.st_mode;
+        request_t send_req;
+        build_req(&send_req, RAID1, cmd_write, ZIPFILE, NULL, stbuf.st_size, 0, 0);
+        send_req.sendback = false;
+        send_req.f_info.flags = O_CREAT | O_WRONLY;
+        send_req.f_info.mode = stbuf.st_mode;
     
 
-        writen(sendfd, send_req, sizeof(request_t));
-        sendfile(sendfd, fd, &send_req->f_info.offset, send_req->f_info.f_size);
+        writen(sendfd, &send_req, sizeof(request_t));
+        sendfile(sendfd, fd, &send_req.f_info.offset, send_req.f_info.f_size);
         
         // notify server to decompress received data
-        send_req->fn = cmd_restore_dir;
-        send_req->f_info.mode = receive_from_server;
-        writen(sendfd, send_req, sizeof(request_t));
+        send_req.fn = cmd_restore_dir;
+        send_req.f_info.mode = receive_from_server;
+        writen(sendfd, &send_req, sizeof(request_t));
 
         close(fd);
         unlink(path);   // delete compressed data
         free(path);
-        free(send_req);
 
     } else if (req->f_info.mode == receive_from_server) {
         // decompress data and delete compressed data

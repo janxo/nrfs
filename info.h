@@ -41,7 +41,7 @@
 #define READ_CHUNK_LEN 32768
 
 
-typedef enum {dummy = -123495, unused = -50, success = 0, error = -1, done = 1,
+typedef enum {dummy = -12345, unused = -50, success = 0, error = -1, done = 1,
 			  writing = 2, hash_match = 4, hash_mismatch = -4, no_attr = -5, 
 			  sending_attr = 5, send_to_server = 10, receive_from_server = -10} status;
 

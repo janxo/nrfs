@@ -13,13 +13,15 @@ ssize_t readn(int fd, const void *buffer, size_t n) {
 	char *buf;
 
 	buf = (char *) buffer;
-	// printf("in readn before loop\n");
+	printf("\n\nin readn before loop\n\n");
 	for (totRead = 0; totRead < n; ) {
 		// printf("in da loop");
 		numRead = read(fd, buf, n - totRead);
 		// printf("numRead -- %d\n", numRead);
-		if (numRead == 0)
+		if (numRead == 0) {
+			if (totRead != n) return -1;
 			return totRead;
+		}
 		if (numRead == -1) {
 		if (errno == EINTR)
 			continue;
@@ -47,10 +49,11 @@ ssize_t writen(int fd, const void *buffer, size_t n) {
 		numWritten = write(fd, buf, n - totWritten);
 		
 		if (numWritten <= 0) {
-		if (numWritten == -1 && errno == EINTR)
-			continue;
-		else
-			return -1;
+			if (totWritten != n) return -1;
+			if (numWritten == -1 && errno == EINTR)
+				continue;
+			else
+				return -1;
 		}
 		totWritten += numWritten;
 		buf += numWritten;
@@ -58,41 +61,6 @@ ssize_t writen(int fd, const void *buffer, size_t n) {
 	return totWritten;
 }
 
-status send_file(int sfd, request_t *req, const char *buf, md5_t *md5, int *err) {
-
-	// send request to server
-	write(sfd, req, sizeof(request_t));
-	status st;
-
-	if (req->sendback)
-		// read file open status from server
-		read(sfd, &st, sizeof(status));
-	
-	if (req->sendback && st == error) {
-		printf("BEFORE READN\n");
-		// read errno
-		read(sfd, err, sizeof(int));
-		printf("errno -- %d\n", *err);
-		return st;
-	} else {
-
-		printf("should send -- %zu bytes\n", req->f_info.f_size);
-
-		write(sfd, buf, req->f_info.f_size);
-		printf("sent -- %s\n", buf);
-
-		if (req->sendback) {
-			readn(sfd, &st, sizeof(status));
-			if (st == error) {
-				read(sfd, err, sizeof(int));
-				printf("error writing file -- %d\n", *err);
-				return st;
-			}
-		}
-	}
-
-	return st;
-}
 
 size_t send_file1(int out_fd, int in_fd, request_t *req, md5_t *md5) {
 	req->sendback = false;
@@ -165,14 +133,14 @@ int init_server(int *fd, remote *server) {
 	if (res == 0) {
 		*fd = sfd;
 	} else {
-		fprintf(stderr, "%s\n", "FAILED TO CONNECT");
+		// fprintf(stderr, "%s\n", "FAILED TO CONNECT");
+		close(sfd);
 	}
 	return res;
 }
 
-request_t *build_req(int raid, command cmd, const char *path,
+void build_req(request_t *req, int raid, command cmd, const char *path,
 							struct fuse_file_info *fi, size_t file_size, off_t offset, size_t padding_size) {
-	request_t *req = malloc(sizeof(request_t));
 	req->raid = raid;
 	req->fn = cmd;
 
@@ -183,7 +151,6 @@ request_t *build_req(int raid, command cmd, const char *path,
 	if (fi != NULL) {
 		req->f_info.flags = fi->flags;
 	}
-	return req;
 }
 
 
