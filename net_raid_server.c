@@ -43,7 +43,6 @@ char *build_path(char *p1, char *p2) {
 }
 
 static void readdir1_handler(int cfd, void *buff) {
-    printf("!!! IN READDIR1 HANDLER !!! \n");
     status st;
     request_t *req = (request_t *) buff;
     DIR *dp;
@@ -67,7 +66,6 @@ static void readdir1_handler(int cfd, void *buff) {
 
         int index = 0;
         while ((de = readdir(dp)) != NULL) {
-            printf("dir entry -- %s\n", de->d_name);
             int dir_entry_len = strlen(de->d_name);
             memcpy(resp.buff+index, de->d_name, dir_entry_len);
             index += dir_entry_len;
@@ -78,11 +76,9 @@ static void readdir1_handler(int cfd, void *buff) {
         
         writen(cfd, &resp.packet_size, sizeof(resp.packet_size));
         writen(cfd, resp.buff, resp.packet_size);
-        printf("sending directories -- %s\n", resp.buff);
     }
 
 
-    printf("!!! READDIR1 DONE !!!\n");
     closedir(dp);
 
 }
@@ -90,20 +86,15 @@ static void readdir1_handler(int cfd, void *buff) {
 
 
 static void write1_handler(int cfd, void *buff) {
-    printf("!!! IN WRITE HANDLER !!!\n");
     request_t *req = (request_t *) buff;
 
     char *path = build_path(storage_path, req->f_info.path);
-    printf("path -- %s\n", path);
     status fd = open(path, req->f_info.flags, req->f_info.mode);
-    printf("fd -- %d\n", fd);
-    printf("fsize -- %zu\n", req->f_info.f_size);
+  
     if (req->sendback)
         writen(cfd, &fd, sizeof(status));
     if (fd == error && req->sendback) {
         fd = errno;
-        printf("err -- %d\n", errno);
-        printf("fd -- %d\n", fd);
         writen(cfd, &fd, sizeof(status));
     } else {
 
@@ -111,14 +102,12 @@ static void write1_handler(int cfd, void *buff) {
         int read_n;
       
         read_n = readn(cfd, file_chunk, req->f_info.f_size);
-        printf("read -- %d\n", read_n);
     
         status res = pwrite(fd, file_chunk, read_n, req->f_info.offset);
-        printf("res is -- %d\n", res);
+       
         if (req->sendback) {
             writen(cfd, &res, sizeof(status));
             if (res == error) {
-                printf("error writing file\n");
                 int err = errno;
                 writen(cfd, &err, sizeof(err));
             }
@@ -129,47 +118,34 @@ static void write1_handler(int cfd, void *buff) {
      
     
     close(fd);
-    free(path);
-    printf("!!! END WRITE HANDLER !!! \n");
-    
+    free(path);   
 }
 
 static void getattr1_handler(int cfd, void *buff) {
-    printf("!!! IN GETATTR HANDLER !!! \n");
-
     request_t *req = (request_t *) buff;
     struct stat stbuf;
 
     status st;
     char *path = build_path(storage_path, req->f_info.path);
     int fd = open(path, O_RDONLY);
-    printf("path -- %s\n", path);
+    
     st = stat(path, &stbuf);
-    printf("st -- %d\n", st);
+   
     writen(cfd, &st, sizeof(st));
     
     if (st == error) {
-        printf("sizeof errno is -- %lu\n", sizeof(errno));
-        printf("error -- %d\n", errno);
         int res = errno;
-        printf("res is %d\n", res);
         writen(cfd, &res, sizeof(res));
     } else {
-        size_t sent = writen(cfd, &stbuf, sizeof(struct stat));
-        printf("struct stat size -- %zu\n", sizeof(struct stat));
-        printf("sent -- %zu\n", sent);
+        writen(cfd, &stbuf, sizeof(struct stat));
     }
-    printf("st size -- %zu\n", stbuf.st_size);
 
     close(fd);
     free(path);
-    printf("!!! GETATTR DONE !!! \n");
 }
 
 
 static void create1_handler(int cfd, void *buff) {
-    printf("!!! IN CREATE1 HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
     status st = open(path, req->f_info.flags, req->f_info.mode);
@@ -183,18 +159,13 @@ static void create1_handler(int cfd, void *buff) {
     }
     close(st);
     free(path);
-
-    printf("!!! CREATE1 DONE !!! \n");
 }
 
 
 static void open1_handler(int cfd, void *buff) {
-    printf("!!! OPEN1 HANDLER !!!\n");
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
     status st = open(path, req->f_info.flags);
-    printf("path -- %s\n", path);
-    printf("open status -- %d\n", st);
 
     md5_t md5_attr;
     status match;
@@ -204,14 +175,12 @@ static void open1_handler(int cfd, void *buff) {
     fstat(st, &stbuf);
 
     if (attr_present == -1 || stbuf.st_size == 0) {
-        printf("no attr or size is 0\n");
         match = hash_mismatch;
         memset(&md5_attr, 0, sizeof(md5_attr));
     } else {
         
         int fd = open(path, O_RDONLY);
         void *buff = mmap(NULL, stbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
-        printf("errno -- %d\n", errno);
         assert(buff != MAP_FAILED);
         md5_t md5_curr;
         get_hash(buff, stbuf.st_size, &md5_curr);
@@ -219,11 +188,8 @@ static void open1_handler(int cfd, void *buff) {
         int cmp = strcmp((const char*)md5_attr.hash, (const char*)md5_curr.hash);
 
         if (cmp == 0) {
-            printf("hash match\n");
             match = hash_match;
-           
         } else {
-            printf("hash mismatch\n");
             match = hash_mismatch;
         }
         close(fd);
@@ -235,12 +201,10 @@ static void open1_handler(int cfd, void *buff) {
 
     close(st);
     free(path);
-    printf("!!! OPEN1 DONE !!! \n");
 }
 
 
 static void access1_handler(int cfd, void *buff) {
-    printf("!!! ACCESS1 HANDLER !!!\n");
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
     status st = access(path, req->f_info.mask);
@@ -255,13 +219,10 @@ static void access1_handler(int cfd, void *buff) {
     }
 
     free(path);
-    printf("!!! ACCESS1 DONE !!! \n");
 }
 
 
 static void utimens1_handler(int cfd, void *buff) {
-    printf("!!! UTIMENS1 HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
 
@@ -279,12 +240,9 @@ static void utimens1_handler(int cfd, void *buff) {
     }
 
     free(path);
-    printf("!!! UTIMENS1 DONE !!! \n");
 }
 
 static void unlink1_handler(int cfd, void *buff) {
-    printf("!!! UNLINK1 HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
 
@@ -299,13 +257,10 @@ static void unlink1_handler(int cfd, void *buff) {
     }
 
     free(path);
-    printf("!!! UNLINK1 DONE !!!\n");
 }
 
 
 static void mkdir1_handler(int cfd, void *buff) {
-    printf("!!! MKDIR1 HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
 
@@ -320,20 +275,15 @@ static void mkdir1_handler(int cfd, void *buff) {
     }
 
     free(path);
-    printf("!!! MKDIR1 DONE !!!\n");
 }
 
 static void read1_handler(int cfd, void *buff) {
-    printf("!!! READ1 HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
 
     status st = open(path, req->f_info.flags);
     writen(cfd, &st, sizeof(status));
-    printf("status -- %d\n", st);
-    printf("offset -- %lu\n", req->f_info.offset);
-    printf("should send -- %zu\n", req->f_info.f_size);
+   
     if (st == error) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
@@ -346,18 +296,13 @@ static void read1_handler(int cfd, void *buff) {
         if (toSend > req->f_info.f_size) {
             toSend = req->f_info.f_size;
         }
-        printf("toSend -- %zu\n", toSend);
         writen(cfd, &toSend, sizeof(size_t));
-        size_t sent = sendfile(cfd, st, &req->f_info.offset, toSend);
-        printf("sent -- %zu\n", sent);
+        sendfile(cfd, st, &req->f_info.offset, toSend);
     }
     close(st);
-    printf("!!! READ1 DONE !!!\n");
 }
 
 static void rmdir1_handler(int cfd, void *buff) {
-    printf("!!! RMDIR1 HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
 
@@ -371,13 +316,9 @@ static void rmdir1_handler(int cfd, void *buff) {
     }
 
     free(path);
-
-    printf("!!! RMDIR1 DONE !!!\n");
 }
 
 static void rename1_handler(int cfd, void *buff) {
-    printf("!!! RENAME1 HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
     char to[NAME_LEN];
@@ -397,16 +338,12 @@ static void rename1_handler(int cfd, void *buff) {
     }
     free(path);
     free(new_name);
-    printf("!!! RENAME1 DONE !!!\n");
 }
 
 static void release1_handler(int cfd, void *buff) {
-    printf("!!! RELEASE1 HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
  
     md5_t md5;
-    printf("received path -- %s\n", req->f_info.path);
     char *path = build_path(storage_path, req->f_info.path);
     int fd = open(path, O_RDONLY);
     struct stat stbuf;
@@ -415,7 +352,6 @@ static void release1_handler(int cfd, void *buff) {
     void *file = mmap(NULL, stbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
     assert(buff != MAP_FAILED);
     get_hash(file, stbuf.st_size, &md5);
-    printf("hash --- %s\n", md5.hash);
     status res = setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_REPLACE);
     if (res == error) {
         setxattr(path, ATTR_HASH, md5.hash, sizeof(md5.hash), XATTR_CREATE);
@@ -424,12 +360,9 @@ static void release1_handler(int cfd, void *buff) {
 
     close(fd);
     free(path);
-
-    printf("!!! RELEASE1 DONE !!!\n");
 }
 
 static void truncate1_handler(int cfd, void *buff) {
-    printf("!!! TRUNCATE1 HANDLER !!!\n");
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
     status st = truncate(path, req->f_info.f_size);
@@ -442,21 +375,15 @@ static void truncate1_handler(int cfd, void *buff) {
     }
 
     free(path);
-
-    printf("!!! TRUNCATE1 DONE !!!\n");
 }
 
 
 
 static void restore1_file_handler(int cfd, void *buff) {
-    printf("!!! RESTORE1_FILE HANDLER !!!\n");
-
     request_t *req = (request_t *) buff;
     remote send_to_server;
     readn(cfd, &send_to_server, sizeof(remote));
     int sendfd;
-    printf("addr -- %s\n", send_to_server.ip_address);
-    printf("port -- %s\n", send_to_server.port);
     init_server(&sendfd, &send_to_server);
     struct stat stbuf;
     char *path = build_path(storage_path, req->f_info.path);
@@ -476,7 +403,6 @@ static void restore1_file_handler(int cfd, void *buff) {
     sendfile(sendfd, fd, &req->f_info.offset, req->f_info.f_size);
     // write hashes
     req->fn = cmd_release;
-    printf("path -- %s\n", req->f_info.path);
     writen(sendfd, req, sizeof(request_t));
     close(fd);
     close(sendfd);
@@ -484,18 +410,14 @@ static void restore1_file_handler(int cfd, void *buff) {
 
     status done_st = done;
     writen(cfd, &done_st, sizeof(status));
-
-    printf("!!! RESTORE1_FILE DONE !!!\n");
 }
 
 
 static void restore1_dir_handler(int cfd, void *buff) {
-    printf("!!! RESTORE1_DIR HANDLER !!!\n");
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, ZIPFILE);
     // compress folder
     if (req->f_info.mode == send_to_server) {
-        printf("should send to server\n");
         int pid = fork();
         if (pid == 0) {
             execl("/bin/tar", "tar", "-czf", path, storage_path, NULL);
@@ -539,7 +461,6 @@ static void restore1_dir_handler(int cfd, void *buff) {
 
     } else if (req->f_info.mode == receive_from_server) {
         // decompress data and delete compressed data
-        printf("should receive from server\n");
         int pid;
         pid = fork();
         if (pid == 0) {
@@ -554,18 +475,13 @@ static void restore1_dir_handler(int cfd, void *buff) {
         writen(cfd, &done_st, sizeof(status));
         // close(cfd);
     }
-    printf("!!! RESTORE1_DIR DONE !!!\n");
 }
 
 void *client_handler(void *data) {
-    printf("In handler\n");
     int cfd = *(int*)data;
     request_t req;
     int data_size;
-    printf("Before loop\n");
-    while (1) {
-        printf("IN the loop\n");
-        printf("cfd -- %d\n", cfd);
+    while (true) {
         data_size = readn (cfd, &req, sizeof(request_t));
 
         if (req.raid == RAID1) {
@@ -603,10 +519,8 @@ void *client_handler(void *data) {
 
 
 int main(int argc, char* argv[])
-{    
-    printf("In server main\n");
+{   
     storage_path = argv[3];
-    printf("storage_path is -- %s\n", storage_path);
     int sfd, cfd;
     struct sockaddr_in addr;
     struct sockaddr_in peer_addr;
@@ -629,8 +543,7 @@ int main(int argc, char* argv[])
     ev.events = EPOLLIN;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sfd, &ev);
 
-    while (1) 
-    {
+    while (true) {
         nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         int n;
         for (n = 0; n < nfds; ++n) {
@@ -648,4 +561,5 @@ int main(int argc, char* argv[])
 
     }
     close(sfd);
+    close(epoll_fd);
 }
