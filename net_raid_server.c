@@ -107,16 +107,11 @@ static void write1_handler(int cfd, void *buff) {
         writen(cfd, &fd, sizeof(status));
     } else {
 
-        // md5_t md5;
         char *file_chunk = malloc(req->f_info.f_size);
         int read_n;
-        // printf("status received -- %d\n", req->st);
-        // int read_n = readn(cfd, &md5.hash, sizeof(md5.hash));
-        // printf("read -- %d\n", read_n);
-        // printf("received hash-- %s\n", md5.hash);
+      
         read_n = readn(cfd, file_chunk, req->f_info.f_size);
         printf("read -- %d\n", read_n);
-        // printf("received file-- %s\n", file_chunk);
     
         status res = pwrite(fd, file_chunk, read_n, req->f_info.offset);
         printf("res is -- %d\n", res);
@@ -177,7 +172,6 @@ static void create1_handler(int cfd, void *buff) {
 
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
-    // printf("mode -- %d\n", req->f_info.mode);
     status st = open(path, req->f_info.flags, req->f_info.mode);
 
     if (req->sendback) {
@@ -185,9 +179,7 @@ static void create1_handler(int cfd, void *buff) {
         if (st == error) {
             int res = errno;
             writen(cfd, &res, sizeof(res));
-        } else {
-            // close(st);
-        }
+        } 
     }
     close(st);
     free(path);
@@ -316,8 +308,7 @@ static void mkdir1_handler(int cfd, void *buff) {
 
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
-    // printf("path0 -- %s\n", req->f_info.path);
-    // printf("path1 -- %s\n", path);
+
     status st = mkdir(path, req->f_info.mode);
 
     if (req->sendback) {
@@ -347,12 +338,7 @@ static void read1_handler(int cfd, void *buff) {
         int res = errno;
         writen(cfd, &res, sizeof(res));
     } else {
-        // send dummy for edge case
-        // when file size is 0
-        // client will block on read if we don't send anyhting
-        // so we send dummy bytes
-        // status dum = dummy;
-        // writen(cfd, &dum, sizeof(status));
+
         size_t toSend = 0;
         struct stat stbuf;
         fstat(st, &stbuf);
@@ -394,7 +380,7 @@ static void rename1_handler(int cfd, void *buff) {
 
     request_t *req = (request_t *) buff;
     char *path = build_path(storage_path, req->f_info.path);
-    char to[64];
+    char to[NAME_LEN];
 
     size_t len;
     readn(cfd, &len, sizeof(size_t));
@@ -485,8 +471,6 @@ static void restore1_file_handler(int cfd, void *buff) {
     req->f_info.f_size = stbuf.st_size;
     req->f_info.offset = 0;
     
-    // md5_t md5;
-    // getxattr(path, ATTR_HASH, &md5.hash, sizeof(md5.hash));
     writen(sendfd, req, sizeof(request_t));
     
     sendfile(sendfd, fd, &req->f_info.offset, req->f_info.f_size);
@@ -494,10 +478,12 @@ static void restore1_file_handler(int cfd, void *buff) {
     req->fn = cmd_release;
     printf("path -- %s\n", req->f_info.path);
     writen(sendfd, req, sizeof(request_t));
-    // writen(sendfd, &md5, sizeof(md5_t));
     close(fd);
     close(sendfd);
     free(path);
+
+    status done_st = done;
+    writen(cfd, &done_st, sizeof(status));
 
     printf("!!! RESTORE1_FILE DONE !!!\n");
 }
@@ -514,8 +500,8 @@ static void restore1_dir_handler(int cfd, void *buff) {
         if (pid == 0) {
             execl("/bin/tar", "tar", "-czf", path, storage_path, NULL);
         }
-        int status;
-        wait(&status);
+        int wait_status;
+        wait(&wait_status);
         // connect to server and send compressed data to it
         remote send_to_server;
         readn(cfd, &send_to_server, sizeof(remote));
@@ -540,7 +526,14 @@ static void restore1_dir_handler(int cfd, void *buff) {
         send_req.f_info.mode = receive_from_server;
         writen(sendfd, &send_req, sizeof(request_t));
 
+        status done_st;
+        // wait from server that operation is done
+        readn(sendfd, &done_st, sizeof(status));
+        // notify client that operation is done
+        writen(cfd, &done_st, sizeof(status));
+
         close(fd);
+        // close(sendfd);
         unlink(path);   // delete compressed data
         free(path);
 
@@ -552,9 +545,14 @@ static void restore1_dir_handler(int cfd, void *buff) {
         if (pid == 0) {
             execl("/bin/tar", "tar", "--strip-components", "1", "-xzf", path, "-C", storage_path, NULL);
         }
-        int status;
-        wait(&status);
+        int wait_status;
+        wait(&wait_status);
         unlink(path);
+
+        // notify server that operation is done
+        status done_st = done;
+        writen(cfd, &done_st, sizeof(status));
+        // close(cfd);
     }
     printf("!!! RESTORE1_DIR DONE !!!\n");
 }
@@ -636,7 +634,6 @@ int main(int argc, char* argv[])
         nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         int n;
         for (n = 0; n < nfds; ++n) {
-            // printf("n -- %d\n", n);
             if (events[n].data.fd == sfd) {
                 socklen_t peer_addr_size = sizeof(struct sockaddr_in);
                 cfd = accept(sfd, (struct sockaddr *) &peer_addr, &peer_addr_size);

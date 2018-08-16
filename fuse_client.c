@@ -44,7 +44,7 @@ md5_attr_t *md5_attr;	// used for hashing
 int dead_server;		// index of dead server
 char *writing_file;
 bool reconnect_requested = false;
-bool reconnect_failed = false;
+pthread_mutex_t reconnect_lock;
 
 
 int get_working_server() {
@@ -75,13 +75,18 @@ static status response_handler(int nth_server, int *err) {
 	return st;
 }
 
+int get_err(int res0, int res1) {
+	if (server_isalive(RAID1_MAIN))
+		return -res0;
+	else return -res1;
+}
+
 void log_msg(FILE *f, char *msg) {
 	fprintf(f, "%s\n", msg);
 	fflush(f);
 }
 
-void log_server_info(FILE *f, strg_info_t *strg, int nth_server) {
-	remote *server = &strg->strg.servers[nth_server];
+void log_server_info(FILE *f, strg_info_t *strg, remote *server) {
 	char *cur_time = get_time();
 	fprintf(f, "%s %s %s:%s ", cur_time, strg->strg.diskname,
 								 server->ip_address, server->port);
@@ -90,8 +95,9 @@ void log_server_info(FILE *f, strg_info_t *strg, int nth_server) {
 }
 
 void *reconnect(void *data) {
-	printf("timeout -- %d\n", strg.timeout);
-	printf("server to reconnect -- %d\n", dead_server);
+	log_server_info(log_file, &strg, &strg.strg.servers[dead_server]);
+	log_msg(log_file, MSG_RECONNECT);
+	// printf("server to reconnect -- %d\n", dead_server);
 	close(socket_fds[dead_server]);
 	clock_t begin;
 	clock_t time_spent;
@@ -101,32 +107,45 @@ void *reconnect(void *data) {
 		// printf("trying to reconnect\n");
 		int res = init_server(&socket_fds[dead_server], &strg.strg.servers[dead_server]);
 		if (res == 0) {
+			// printf("\n\n !!RECONNECTED SUCCESFULLY!! \n\n\n");
+			log_server_info(log_file, &strg, &strg.strg.servers[dead_server]);
+			log_msg(log_file, MSG_RECONNECT_SUCCESS);
+			reconnect_requested = false;
 			dead_server = -1;
-			printf("\n\n !!RECONNECTED SUCCESFULLY!! \n\n\n");
 			break;
 		}
 		/* Get CPU time since loop started */
 		time_spent = (clock_t)(clock() - begin) / CLOCKS_PER_SEC;
 
 		if (time_spent >= strg.timeout){
-			printf("couldn't reconnect\n");
-		
-			reconnect_failed = true;
+			// printf("couldn't reconnect\n");
+
+			log_server_info(log_file, &strg, &strg.strg.servers[dead_server]);
+			log_msg(log_file, MSG_RECONNECT_FAIL);
+			log_server_info(log_file, &strg, &strg.strg.servers[dead_server]);
+			log_msg(log_file, MSG_SERVER_LOST);
+
 			init_hotswap();
 			break;
 		}
 	}
-	reconnect_requested = false;
+	// uncomment this if you want to try reconnecting after every command
+	// otherwise it'll try only once
+	// reconnect_requested = false;
 	return NULL;
 }
 
- void try_reconnect() {
+ void try_reconnect(int nth_server) {	
+	pthread_mutex_lock(&reconnect_lock);
  	if (!reconnect_requested) {
  		reconnect_requested = true;
+ 		dead_server = nth_server;
+		pthread_mutex_unlock(&reconnect_lock);
 		printf("In try_reconnect\n");
 		pthread_t t;
 		pthread_create(&t, NULL, reconnect, NULL);
 	}
+	pthread_mutex_unlock(&reconnect_lock);
 }
 
 
@@ -137,34 +156,56 @@ int init_connection(strg_info_t *strg) {
 	int i;
 	for (i = 0; i < strg->strg.server_count; ++i) {
 		int res = init_server(&socket_fds[i], &strg->strg.servers[i]);
+		log_server_info(log_file, strg, &strg->strg.servers[i]);
 		if (res == 0) {
-			log_server_info(log_file, strg, i);
 			log_msg(log_file, "open connection");
-		} else dead_server = i;
+		} else {
+			dead_server = i;
+			log_msg(log_file, MSG_RECONNECT_FAIL);
+		}
 	}
 	return 0;
 }
-	
+
 void init_hotswap() {
-	if (reconnect_failed) {
-		reconnect_failed = false;
-		int res;
-		printf("\n\n !!! INITIALIZING HOTSWAP !!! \n\n\n");
-		printf("dead server -- %d\n", dead_server);
-		res = init_server(&socket_fds[dead_server], &strg.strg.hotswap);
-		printf("addr -- %s\n", strg.strg.hotswap.ip_address);
-		printf("port -- %s\n", strg.strg.hotswap.port);
-		printf("res -- %d, err -- %d\n", res, errno);
-		printf("addr -- %s\n", strg.strg.hotswap.ip_address);
-		printf("port -- %s\n", strg.strg.hotswap.port);
-		int sfd = socket_fds[dead_server];
+	int res;
+	printf("\n\n !!! INITIALIZING HOTSWAP !!! \n\n\n");
+	log_server_info(log_file, &strg, &strg.strg.hotswap);
+	log_msg(log_file, MSG_HOTSWAP_INIT);
+	// printf("dead server -- %d\n", dead_server);
+	res = init_server(&socket_fds[dead_server], &strg.strg.hotswap);
+	// printf("addr -- %s\n", strg.strg.hotswap.ip_address);
+	// printf("port -- %s\n", strg.strg.hotswap.port);
+	// printf("res -- %d, err -- %d\n", res, errno);
+	// printf("addr -- %s\n", strg.strg.hotswap.ip_address);
+	// printf("port -- %s\n", strg.strg.hotswap.port);
+	if (res == 0) {
+		int worker = get_working_server();
+		int sfd = socket_fds[worker];
 		request_t req;
 		build_req(&req, RAID1, cmd_restore_dir, NULL, NULL, 0, 0, 0);
 		req.f_info.mode = send_to_server;
+		printf("\n\n\n !!RESTORE DIR!!!\n\n\n");
 		writen(sfd, &req, sizeof(request_t));
 		writen(sfd, &strg.strg.hotswap, sizeof(remote));
+
+		status st;
+		readn(sfd, &st, sizeof(status));
+		printf("\n\n\n !!RESTORE DIR DONE!!!\n\n\n");
+
+		log_server_info(log_file, &strg, &strg.strg.hotswap);
+		log_msg(log_file, MSG_HOTSWAP_ADD);
+		remote tmp;
+		memcpy(&tmp, &strg.strg.servers[dead_server], sizeof(remote));
+		memcpy(&strg.strg.servers[dead_server], &strg.strg.hotswap, sizeof(remote));
+		memcpy(&strg.strg.hotswap, &tmp, sizeof(remote));
 		dead_server = -1;
+	} else {
+		log_server_info(log_file, &strg, &strg.strg.hotswap);
+		log_msg(log_file, MSG_HOTSWAP_FAILED);
 	}
+	// this is important to be able to reconnect after hot
+	reconnect_requested = false;
 }
 
 
@@ -172,6 +213,7 @@ void init(strg_info_t *strg) {
 	md5_attr = NULL;
 	writing_file = NULL;
 	dead_server = -1;
+	pthread_mutex_init(&reconnect_lock, NULL);
 	log_file = fopen(strg->errorlog, "a");
 	if (log_file == NULL) {
 		fprintf(stderr, "LOG FILE NOT FOUND\n");
@@ -185,8 +227,7 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi) {
 
 	printf("nfrfs1_readdir\n");
-	log_server_info(log_file, &strg, RAID1_MAIN);
-	log_msg(log_file, "readdir");
+
 	request_t req;
 	response_t resp;
 
@@ -216,9 +257,8 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 		// means server fd was closed
 		if (read_b == -1) {
-			printf("SERVER DEAD\n");
-			// TODO
-			// reconnect to server
+			printf("SERVER DEAD IN READDIR\n");
+			try_reconnect(RAID1_MAIN);
 		}
 
 		char *tok;
@@ -226,7 +266,7 @@ static int nrfs1_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	
 		while(tok != NULL) {
 			filler(buf, tok, NULL, 0);
-			printf("tok -- %s\n", tok);
+			// printf("tok -- %s\n", tok);
 			tok = strtok(NULL, ",");
 		}
 	}
@@ -244,42 +284,42 @@ status send_file(int nth_server, request_t *req, const char *buf, int *err) {
 	res = writen(sfd, req, sizeof(request_t));
 	if (res == -1) {
 		printf("\n\n CONNECTION LOST!!! __ IN SEND_FILE\n\n\n");
-		dead_server = nth_server;
+		try_reconnect(nth_server);
 		st = server_dead;
 	}
 	
-	printf("write request sent -- %d\n", res);
+	// printf("write request sent -- %d\n", res);
 	if (req->sendback) {
 		// read file open status from server
 		res = readn(sfd, &st, sizeof(status));
 		if (res == -1) {
 			printf("\n\n CONNECTION LOST!!! __ IN SEND_FILE\n\n\n");
-			dead_server = nth_server;
+			try_reconnect(nth_server);
 			st = server_dead;
 		}
 		printf("read -- %d\n", res);
 	}
 	
 	if (req->sendback && st == error) {
-		printf("BEFORE READN\n");
+		// printf("BEFORE READN\n");
 		// read errno
 		res = readn(sfd, err, sizeof(int));
 		if (res == -1) {
 			printf("\n\n CONNECTION LOST!!! __ IN SEND_FILE\n\n\n");
-			dead_server = nth_server;
+			try_reconnect(nth_server);
 			st = server_dead;
 		}
-		printf("read -- %d\n", res);
-		printf("errno -- %d\n", *err);
+		// printf("read -- %d\n", res);
+		// printf("errno -- %d\n", *err);
 		return st;
 	} else {
 
-		printf("should send -- %zu bytes\n", req->f_info.f_size);
+		// printf("should send -- %zu bytes\n", req->f_info.f_size);
 
 		res = writen(sfd, buf, req->f_info.f_size);
 		if (res == -1) {
 			printf("\n\n CONNECTION LOST!!! __ IN SEND_FILE\n\n\n");
-			dead_server = nth_server;
+			try_reconnect(nth_server);
 			st = server_dead;
 		}
 
@@ -287,7 +327,7 @@ status send_file(int nth_server, request_t *req, const char *buf, int *err) {
 			res = readn(sfd, &st, sizeof(status));
 			if (res == -1) {
 				printf("\n\n CONNECTION LOST!!! __ IN SEND_FILE\n\n\n");
-				dead_server = nth_server;
+				try_reconnect(nth_server);
 				st = server_dead;
 			}
 			printf("read -- %d\n", res);
@@ -295,7 +335,7 @@ status send_file(int nth_server, request_t *req, const char *buf, int *err) {
 				res = readn(sfd, err, sizeof(int));
 				if (res == -1) {
 					printf("\n\n CONNECTION LOST!!! __ IN SEND_FILE\n\n\n");
-					dead_server = nth_server;
+					try_reconnect(nth_server);
 					st = server_dead;
 				}
 				printf("read -- %d\n", res);
@@ -324,40 +364,41 @@ static int nrfs1_write(const char *path, const char *buf, size_t size, off_t off
 		writing_file = malloc(NAME_LEN);
 		strcpy(writing_file, path);
 	}
-
 	
 	int err;
 	status st = dummy;
 
 	if (server_isalive(RAID1_MAIN)) {
-		printf("server 0 is alive\n");
+		// printf("server 0 is alive\n");
 		st = send_file(RAID1_MAIN, &req, buf, &err);
 		if (st == error) {
 			return -err;
 		}
-	} else try_reconnect();
+	} 
 
 	if (server_isalive(RAID1_REPLICANT)) {
-		printf("server1 is alive\n");
+		// printf("server1 is alive\n");
 		st = send_file(RAID1_REPLICANT, &req, buf, &err);
 		if (st == error) {
 			return -err;
 		}
-	} else try_reconnect();
+	}
 
 	return size;
 }
 
 
 void restore_file(request_t *restore_req, int nth_server) {
-	// restore_req->f_info.mode = send_to_server;
 	int sfd = socket_fds[nth_server];
-	printf("from -- %d\n", nth_server);
+	// printf("from -- %d\n", nth_server);
 	restore_req->sendback = false;
-	printf("addr -- %s\n", strg.strg.servers[1-nth_server].ip_address);
-	printf("port -- %s\n", strg.strg.servers[1-nth_server].port);
+	// printf("addr -- %s\n", strg.strg.servers[1-nth_server].ip_address);
+	// printf("port -- %s\n", strg.strg.servers[1-nth_server].port);
 	writen(sfd, restore_req, sizeof(request_t));
 	writen(sfd, &strg.strg.servers[1-nth_server], sizeof(remote));
+	status st;
+	readn(sfd, &st, sizeof(status));
+
 }
 
 
@@ -390,26 +431,53 @@ static int nrfs1_open(const char *path, struct fuse_file_info *fi) {
 		readn(sfd1, &f_size1, sizeof(off_t));
 
 		request_t restore_req;
-		build_req(&restore_req, RAID1, cmd_restore_file, path, NULL, 0, 0, 0);		
+		build_req(&restore_req, RAID1, cmd_restore_file, path, NULL, 0, 0, 0);
 
-		if (hash0_match != hash0_match && hash1_match != hash_match) {
+
+		if (hash0_match != hash_match && hash1_match != hash_match) {
 			printf("something bad happened -- both hashes mismatched\n");
+			log_server_info(log_file, &strg, &strg.strg.servers[RAID1_MAIN]);
+			fprintf(log_file, "%s -- %s is corrupt\n", MSG_STORAGE_ERROR, path);
+			log_server_info(log_file, &strg, &strg.strg.servers[RAID1_REPLICANT]);
+			fprintf(log_file, "%s -- %s is corrupt\n", MSG_STORAGE_ERROR, path);
 		} else if (hash0_match == hash_match && hash1_match == hash_mismatch) {
 			printf("hash0 matched but hash1 did not\n");
 			printf("should copy from server0 to server1\n");
+			log_server_info(log_file, &strg, &strg.strg.servers[RAID1_MAIN]);
+			log_msg(log_file, "sending file");
+			log_server_info(log_file, &strg, &strg.strg.servers[RAID1_REPLICANT]);
+			fprintf(log_file, "%s file restored\n", path);
+			fflush(log_file);
 			restore_file(&restore_req, RAID1_MAIN);
 		} else if (hash0_match == hash_mismatch && hash1_match == hash_match) {
 			printf("hash1 matched but hash0 did not\n");
 			printf("should copy from server1 to server0\n");
+			log_server_info(log_file, &strg, &strg.strg.servers[RAID1_REPLICANT]);
+			log_msg(log_file, "sending file");
+			log_server_info(log_file, &strg, &strg.strg.servers[RAID1_MAIN]);
+			fprintf(log_file, "%s file restored\n", path);
+			fflush(log_file);
 			restore_file(&restore_req, RAID1_REPLICANT);
 		} else if (hash0_match == hash1_match && hash0_match == hash_match) {
 			printf("both hashes matched, now comparing each\n");
 			if (strcmp((const char*)md5_0.hash, (const char*)md5_1.hash) != 0) {
 				// printf("should copy from server0 to server1\n");
-				if (f_size0 > f_size1)
+				if (f_size0 > f_size1) {
+					log_server_info(log_file, &strg, &strg.strg.servers[RAID1_MAIN]);
+					log_msg(log_file, "sending file");
+					log_server_info(log_file, &strg, &strg.strg.servers[RAID1_REPLICANT]);
+					fprintf(log_file, "%s file restored\n", path);
+					fflush(log_file);
 					restore_file(&restore_req, RAID1_MAIN);
-				else if (f_size0 < f_size1)
+				}
+				else if (f_size0 < f_size1) {
+					log_server_info(log_file, &strg, &strg.strg.servers[RAID1_REPLICANT]);
+					log_msg(log_file, "sending file");
+					log_server_info(log_file, &strg, &strg.strg.servers[RAID1_MAIN]);
+					fprintf(log_file, "%s file restored\n", path);
+					fflush(log_file);
 					restore_file(&restore_req, RAID1_REPLICANT);
+				}
 			}
 		}
 
@@ -426,13 +494,14 @@ static status nrfs1_getattr_helper(int nth_server, request_t *req, struct stat *
 		res = writen(sfd, req, sizeof(request_t));
 		if (res == -1) {
 			printf("\n\n CONNECTION LOST!!! __ IN GETATTR_HELPER\n\n\n");
-			dead_server = nth_server;
-			// return error;
+			try_reconnect(nth_server);
+			return error;
 		}
 		res = readn(sfd, &st, sizeof(status));
 		if (res == -1) {
 			printf("\n\n CONNECTION LOST!!! __ IN GETATTR_HELPER\n\n\n");
-			dead_server = nth_server;
+			try_reconnect(nth_server);
+			return error;
 		}
 
 		if (st == error) {
@@ -440,15 +509,15 @@ static status nrfs1_getattr_helper(int nth_server, request_t *req, struct stat *
 			res = readn(sfd, err, sizeof(int));
 			if (res == -1) {
 				printf("\n\n CONNECTION LOST!!! __ IN GETATTR_HELPER\n\n\n");
-				dead_server = nth_server;
-				// return error;
+				try_reconnect(nth_server);
+				return error;
 			}
 		} else {
 			res = readn(sfd, stbuf, sizeof(struct stat));
 			if (res == -1) {
 				printf("\n\n CONNECTION LOST!!! __ IN GETATTR_HELPER\n\n\n");
-				dead_server = nth_server;
-				// return error;
+				try_reconnect(nth_server);
+				return error;
 			}
 		}
 	} 
@@ -461,8 +530,6 @@ static status nrfs1_getattr_helper(int nth_server, request_t *req, struct stat *
 static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 	printf("nrfs1_getattr\n");
 	printf("path -- %s\n", path);
-	log_server_info(log_file, &strg, RAID1_MAIN);
-	log_msg(log_file, "getattr");
 
 	request_t req;
 	build_req(&req, RAID1, cmd_getattr, path, NULL, 0, 0, 0);
@@ -470,30 +537,18 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 
 	int res0, res1;
 	struct stat stbuf0, stbuf1;
-	// int res1;
-	// struct stat stbuf1;
-	// init_hotswap();
 	
 
 	if (server_isalive(RAID1_MAIN)) {
-		// nrfs1_getattr_helper(RAID1_REPLICANT, req, &stbuf1, &res1);
 		st0 = nrfs1_getattr_helper(RAID1_MAIN, &req, &stbuf0, &res0);
-		// if (st == error) return -EBADFD;
 	}
 	if (server_isalive(RAID1_REPLICANT)) {
 		st1 = nrfs1_getattr_helper(RAID1_REPLICANT, &req, &stbuf1, &res1);
-		// if (st == error) return -EBADFD;
 	}
 
 
-	// if (st == error) {
-	// 	return -res;
-	// }
-
 	if (st0 == error && st1 == error) {
-		if (server_isalive(RAID1_MAIN))
-			return -res0;
-		else return -res1;
+		return get_err(res0, res1);
 		printf("no attr present\n");
 	} else {
 		if (st0 != error) {
@@ -502,7 +557,6 @@ static int nrfs1_getattr(const char *path, struct stat *stbuf) {
 			memcpy(stbuf, &stbuf1, sizeof(struct stat));
 		}
 	}
-	// print_stat(stbuf, &stbuf1);
 
 	printf("nrfs1_getattr DONE\n");
 	
@@ -521,7 +575,6 @@ static void nrfs1_destroy(void* private_data) {
 
 static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 											 struct fuse_file_info* fi) {
-	// init_hotswap();
 	printf("nrfs1_read\n");
 	request_t req;
 	build_req(&req, RAID1, cmd_read, path, fi, size, offset, 0);
@@ -534,7 +587,7 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 	} else if (server_isalive(RAID1_REPLICANT)) {
 		printf("IN READN RAID REPLICANT\n");
 		sfd = socket_fds[RAID1_REPLICANT];
-		try_reconnect();
+		try_reconnect(RAID1_MAIN);
 	}
 
 	size_t sent = 0;
@@ -542,27 +595,14 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 	sent = writen(sfd, &req, sizeof(request_t));
 	if (sent == -1) {
 		printf("\n\n CONNECTION LOST!!! __ IN READ\n\n\n");
-		dead_server = RAID1_MAIN;
-		// return -EAGAIN;
-		try_reconnect();
-		// if (server_isalive(RAID1_REPLICANT)) {
-		// 	sfd = socket_fds[RAID1_REPLICANT];
-		// 	sent = writen(sfd, &req, sizeof(request_t));
-		// }
+		try_reconnect(RAID1_MAIN);
 	}
 	printf("request sent\n");
 	status st;
 	read_n = readn(sfd, &st, sizeof(status));
 	if (read_n == -1) {
 		printf("\n\n CONNECTION LOST!!! __ IN READ\n\n\n");
-		dead_server = RAID1_MAIN;
-		// return -EAGAIN;
-		try_reconnect();
-		// if (server_isalive(RAID1_REPLICANT)){
-		// 	sfd = socket_fds[RAID1_REPLICANT];
-		// 	writen(sfd, &req, sizeof(request_t));
-		// 	readn(sfd, &st, sizeof(status));
-		// }
+		try_reconnect(RAID1_MAIN);
 	}
 	printf("status -- %d\n", st);
 	printf("offset -- %lu\n", offset);
@@ -573,18 +613,7 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 		readn(sfd, &res, sizeof(res));
 		if (read_n == -1) {
 			printf("\n\n CONNECTION LOST!!! __ IN READ\n\n\n");
-			dead_server = RAID1_MAIN;
-			// return -EAGAIN;
-			try_reconnect();
-			// if (server_isalive(RAID1_REPLICANT)) {
-			// 	sfd = socket_fds[RAID1_REPLICANT];
-			// 	writen(sfd, &req, sizeof(request_t));
-			// 	readn(sfd, &st, sizeof(status));
-			// 	if (st == error) {
-			// 		readn(sfd, &res, sizeof(res));
-			// 		return -res;
-			// 	}
-			// }
+			try_reconnect(RAID1_MAIN);
 		}
 		printf("error -- %d\n", -res);
 		return -res;
@@ -597,21 +626,14 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 		read_n = readn(sfd, &toRec, sizeof(size_t));
 		if (read_n == -1) {
 			printf("\n\n CONNECTION LOST!!! __ IN READ AFTER TOREC\n\n\n");
-			dead_server = RAID1_MAIN;
-			// try_reconnect();
+			try_reconnect(RAID1_MAIN);
 		}
 		read_n = readn(sfd, buf, toRec);
 		if (read_n == -1) {
 			printf("\n\n CONNECTION LOST!!! __ AFTER FILE REC\n\n\n");
-			// close(sfd);
-			dead_server = RAID1_MAIN;
-			// try_reconnect();
-			// return -EAGAIN;
+			try_reconnect(RAID1_MAIN);
 		}
 		printf("read -- %zu\n", read_n);
-		// if (read_n == -1) read_n = -errno;
-
-		// free(tmp);
 	}
 
 	printf("\n !!! READ DONE !!!\n\n");
@@ -621,10 +643,8 @@ static int nrfs1_read(const char* path, char *buf, size_t size, off_t offset,
 }
 
 static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
-	// init_hotswap();
 	printf("nrfs1_release\n");
 	printf("path -- %s\n", path);
-	// md5_attr != NULL && strcmp(md5_attr->name, path)
 	if (writing_file != NULL && strcmp(writing_file, path)== 0) {
 		printf("sending hashes\n");
 		request_t req;
@@ -639,8 +659,7 @@ static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
 			res = writen(sfd0, &req ,sizeof(request_t));
 			if (res == -1) {
 				printf("\n\n CONNECTION LOST!!! __ IN RELASE\n\n\n");
-				dead_server = RAID1_MAIN;
-				// return -EBADFD;
+				try_reconnect(RAID1_MAIN);
 			}
 		}
 
@@ -649,8 +668,7 @@ static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
 			res = writen(sfd0, &req ,sizeof(request_t));
 			if (res == -1) {
 				printf("\n\n CONNECTION LOST!!! __ IN RELASE\n\n\n");
-				dead_server = RAID1_MAIN;
-				// return -EBADFD;
+				try_reconnect(RAID1_MAIN);
 			}
 		}
 
@@ -658,15 +676,6 @@ static int nrfs1_release(const char* path, struct fuse_file_info *fi) {
 		free(writing_file);
 		writing_file = NULL;
 	} 
-
-
-	// for testing purposes
-	// int sfd0 = socket_fds[RAID1_MAIN];
-
-	// request_t *req = build_req(RAID1, cmd_restore_dir, path, NULL, 0, 0, 0);
-	// req->f_info.mode = send_to_server;
-	// writen(sfd0, req, sizeof(request_t));
-	// writen(sfd0, &strg.strg.hotswap, sizeof(remote));
 	
 	return 0;
 }
@@ -680,27 +689,23 @@ static int nrfs1_unlink(const char* path) {
 	req.sendback = true;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
+
+	int res0, res1;
+	status st0, st1;
+
 	if (server_isalive(RAID1_MAIN))
 		writen(sfd0, &req, sizeof(request_t));
 
-
-	int res;
-	status st = response_handler(RAID1_MAIN, &res);
-	// readn(sfd0, &st, sizeof(status));
-	if (st == error) {
-		// readn(sfd0, &res, sizeof(res));
-		// printf("error -- %d\n", -res);
-		return -res;
-	}
+	st0 = response_handler(RAID1_MAIN, &res0);
 
 
 	if (server_isalive(RAID1_REPLICANT))
 		writen(sfd1, &req, sizeof(request_t));
 
-	st = response_handler(RAID1_REPLICANT, &res);
-	if (st == error) {
-		return -res;
-	}
+	st1 = response_handler(RAID1_REPLICANT, &res1);
+
+	if (st0 == error && st1 == error) 
+		return get_err(res0, res1);
 
 	return 0;
 }
@@ -713,22 +718,24 @@ static int nrfs1_rmdir(const char* path) {
 	req.sendback = true;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
+
+	int res0, res1;
+	status st0, st1;
+
 	if (server_isalive(RAID1_MAIN))
 		writen(sfd0, &req, sizeof(request_t));
 
-	int res;
-	status st = response_handler(RAID1_MAIN, &res);
-	if (st == error) {
-		return -res;
-	}
+	st0 = response_handler(RAID1_MAIN, &res0);
 
 	if (server_isalive(RAID1_REPLICANT))
 		writen(sfd1, &req, sizeof(request_t));
 
-	st = response_handler(RAID1_REPLICANT, &res);
-	if (st == error) {
-		return -res;
-	}
+	st1 = response_handler(RAID1_REPLICANT, &res1);
+
+	if (st0 == error && st1 == error) 
+		return get_err(res0, res1);
+		
+
 	return 0;
 }
 
@@ -743,22 +750,23 @@ static int nrfs1_mkdir(const char* path, mode_t mode) {
 	// printf("mode -- %d\n", mode);
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
+
+	int res0, res1;
+	status st0, st1;
+
 	if (server_isalive(RAID1_MAIN))
 		writen(sfd0, &req, sizeof(request_t));
 
-	int res;
-	status st = response_handler(RAID1_MAIN, &res);
-	if (st == error) {
-		return -res;
-	}
+	st0 = response_handler(RAID1_MAIN, &res0);
+
 
 	if (server_isalive(RAID1_REPLICANT))
 		writen(sfd1, &req, sizeof(request_t));
 
-	st = response_handler(RAID1_REPLICANT, &res);
-	if (st == error) {
-		return -res;
-	}
+	st1 = response_handler(RAID1_REPLICANT, &res1);
+
+	if (st0 == error && st1 == error) 
+		return get_err(res0, res1);
 
 	return 0;
 }
@@ -786,24 +794,22 @@ static int nrfs1_create(const char *path, mode_t mode, struct fuse_file_info *fi
 	req.sendback = true;
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
+
+	status st0, st1;
+	int res0, res1;
+
 	if (server_isalive(RAID1_MAIN))
 		writen(sfd0, &req, sizeof(request_t));
 
+	st0 = response_handler(RAID1_MAIN, &res0);
 
-	status st, st1;
-	int err, err1;
-	st = response_handler(RAID1_MAIN, &err);
-	if (st == error) {
-		return -err;
-	}
-		// req->sendback = false;
 	if (server_isalive(RAID1_REPLICANT))
 		writen(sfd1, &req, sizeof(request_t));
 
-	st1 = response_handler(RAID1_REPLICANT, &err1);
-	if (st1 == error) {
-		return -err1;
-	}
+	st1 = response_handler(RAID1_REPLICANT, &res1);
+
+	if (st0 == error && st1 == error) 
+		return get_err(res0, res1);
 
 	return 0;
 }
@@ -824,24 +830,23 @@ static int nrfs1_access(const char *path, int mask)
 
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
+
+	int res0, res1;
+	status st0, st1;
+
 	if (server_isalive(RAID1_MAIN))
 		writen(sfd0, &req, sizeof(request_t));
 
-	int res;
-	status st = response_handler(RAID1_MAIN, &res);
-
-	if (st == error) {
-		return -res;
-	}
+	st0 = response_handler(RAID1_MAIN, &res0);
 
 
 	if (server_isalive(RAID1_REPLICANT))
 		writen(sfd1, &req, sizeof(request_t));
 
-	st = response_handler(RAID1_REPLICANT, &res);
-	if (st == error) {
-		return -res;
-	}
+	st1 = response_handler(RAID1_REPLICANT, &res1);
+	
+	if (st0 == error && st1 == error) 
+		return get_err(res0, res1);
 
 	return 0;
 }
@@ -850,6 +855,7 @@ static int nrfs1_access(const char *path, int mask)
 void cleanup() {
 	fclose(log_file);
 	free(socket_fds);
+	pthread_mutex_destroy(&reconnect_lock);
 }
 
 
@@ -863,28 +869,26 @@ static int nrfs1_utimens(const char* path, const struct timespec ts[2]) {
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 
+	int res0, res1;
+	status st0, st1;
+
 	if (server_isalive(RAID1_MAIN)) {
 		writen(sfd0, &req, sizeof(request_t));
 		writen(sfd0, ts, 2*sizeof(struct timespec));
 	}
 
+	st0 = response_handler(RAID1_MAIN, &res0);
 
-	int res;
-	status stat = response_handler(RAID1_MAIN, &res);
-
-	if (stat == error) {
-		return -res;
-	}
 
 	if (server_isalive(RAID1_REPLICANT)){
 		writen(sfd1, &req, sizeof(request_t));
 		writen(sfd1, ts, 2*sizeof(struct timespec));
 	}
 
-	stat = response_handler(RAID1_REPLICANT, &res);
-	if (stat == error) {
-		return -res;
-	}
+	st1 = response_handler(RAID1_REPLICANT, &res1);
+
+	if (st0 == error && st1 == error) 
+		return get_err(res0, res1);
 
 	return 0;
 }
@@ -898,6 +902,9 @@ static int nrfs1_rename(const char *from, const char *to) {
 	int sfd0 = socket_fds[RAID1_MAIN];
 	int sfd1 = socket_fds[RAID1_REPLICANT];
 
+	int res0, res1;
+	status st0, st1;
+
 	size_t len = strlen(to);
 
 	if (server_isalive(RAID1_MAIN)) {
@@ -906,13 +913,7 @@ static int nrfs1_rename(const char *from, const char *to) {
 		writen(sfd0, to, len);
 	}
 
-
-	int res;
-	status stat = response_handler(RAID1_MAIN, &res);
-
-	if (stat == error) {
-		return -res;
-	}
+	st0 = response_handler(RAID1_MAIN, &res0);
 
 	if (server_isalive(RAID1_REPLICANT)) {
 		writen(sfd1, &req, sizeof(request_t));
@@ -920,10 +921,10 @@ static int nrfs1_rename(const char *from, const char *to) {
 		writen(sfd1, to, len);
 	}
 
-	stat = response_handler(RAID1_REPLICANT, &res);
-	if (stat == error) {
-		return -res;
-	}
+	st1 = response_handler(RAID1_REPLICANT, &res1);
+
+	if (st0 == error && st1 == error) 
+		return get_err(res0, res1);
 
 	return 0;
 }

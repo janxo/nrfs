@@ -29,7 +29,15 @@
 
 #define ZIPFILE "/zipfile.tar.gz"
 
-#define FUSE_BUFF_LEN 4096
+#define MSG_RECONNECT "trying to reconnect"
+#define MSG_RECONNECT_SUCCESS "reconnected successfully"
+#define MSG_RECONNECT_FAIL "reconnect attempt failed"
+#define MSG_SERVER_LOST	"server declared as lost"
+#define MSG_HOTSWAP_INIT "trying to connect to hotswap"
+#define MSG_HOTSWAP_ADD "hotswap server added"
+#define MSG_HOTSWAP_FAILED "hotswap connect failed"
+#define MSG_STORAGE_ERROR  "something bad happened -- file is corrupt"
+
 
 #define NAME_LEN 64
 #define MAX_SERVERS 16
@@ -37,8 +45,7 @@
 #define ADDR_LEN 32
 #define PORT_LEN 8
 #define CACHE_LEN 10
-#define BUFF_len 32768	//32KB
-#define READ_CHUNK_LEN 32768
+#define BUFF_len 32768
 
 
 typedef enum {dummy = -12345, server_dead = -23, unused = -50, success = 0, error = -1, done = 1,
@@ -68,7 +75,6 @@ typedef struct storage {
 	remote servers[MAX_SERVERS];
 	remote hotswap;
 } storage;
-
 
 
 typedef struct strg_info {
@@ -106,13 +112,6 @@ typedef struct {
 	char buff[BUFF_len];
 } response_t;
 
-
-typedef struct {
-	size_t f_size;
-	off_t offset;
-	mode_t mode;
-	char *file;
-} cache_file_t;
 
 
 #endif

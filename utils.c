@@ -7,17 +7,13 @@
 
 
 ssize_t readn(int fd, const void *buffer, size_t n) {
-	// printf("!!! IN READN !!!\n");
 	ssize_t numRead;
 	size_t totRead;
 	char *buf;
 
 	buf = (char *) buffer;
-	// printf("\n\nin readn before loop\n\n");
 	for (totRead = 0; totRead < n; ) {
-		// printf("in da loop");
 		numRead = read(fd, buf, n - totRead);
-		// printf("numRead -- %d\n", numRead);
 		if (numRead == 0) {
 			if (totRead != n) return -1;
 			return totRead;
@@ -30,7 +26,6 @@ ssize_t readn(int fd, const void *buffer, size_t n) {
 		}
 		totRead += numRead;
 		buf += numRead;
-		// printf("totread -- %d\n", totRead);
 	}
 	return totRead;
 
@@ -39,7 +34,6 @@ ssize_t readn(int fd, const void *buffer, size_t n) {
 
 
 ssize_t writen(int fd, const void *buffer, size_t n) {
-	// printf("!!! IN WRITEN !!!\n");
 	ssize_t numWritten;
 	size_t totWritten;
 	char *buf;
@@ -132,7 +126,6 @@ int init_server(int *fd, remote *server) {
 	if (res == 0) {
 		*fd = sfd;
 	} else {
-		// fprintf(stderr, "%s\n", "FAILED TO CONNECT");
 		close(sfd);
 	}
 	return res;
