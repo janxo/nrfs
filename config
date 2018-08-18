@@ -7,3 +7,7 @@ mountpoint = testdir
 raid = 1
 servers = 127.0.0.1:10001, 127.0.0.1:10002
 hotswap = 127.0.0.1:11111
+diskname = STORAGE2
+mountpoint = testdir2
+raid = 5
+servers = 127.0.0.1:10011, 127.0.0.1:10012, 127.0.0.1:10013

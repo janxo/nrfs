@@ -56,36 +56,6 @@ ssize_t writen(int fd, const void *buffer, size_t n) {
 }
 
 
-size_t send_file1(int out_fd, int in_fd, request_t *req, md5_t *md5) {
-	req->sendback = false;
-	writen(out_fd, req, sizeof(request_t));
-	writen(out_fd, &md5->hash, sizeof(md5->hash));
-	size_t sent = sendfile(out_fd, in_fd, &req->f_info.offset, req->f_info.f_size);
-	printf("in send_file1, sent -- %zu\n", sent);
-	return sent;
-}
-
-size_t sendfilen(int out_fd, int in_fd, off_t *offset, size_t count) {
-	ssize_t numWritten = 0;
-	size_t totWritten;
-	printf("\nIN SENDFILEN !!! \n\n");
-	for (totWritten = 0; totWritten < count; ) {
-		numWritten = sendfile(out_fd, in_fd, offset, count - totWritten);
-		printf("offset -- %lu\n", *offset);
-		printf("size -- %zu\n", count);
-		if (numWritten <= 0) {
-		if (numWritten == -1 && errno == EINTR)
-			continue;
-		else
-			return -1;
-		}
-		totWritten += numWritten;
-	}
-	printf("totWritten -- %zu\n", totWritten);
-	return totWritten;
-}
-
-
 void md5_tostr(unsigned char *digest, md5_t *md5) {
 	char tmp[128];
 	int i;

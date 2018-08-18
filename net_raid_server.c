@@ -66,16 +66,18 @@ static void readdir1_handler(int cfd, void *buff) {
         memset(resp.buff, 0, sizeof(resp.buff));
 
         int index = 0;
+        int entry_count = 0;
         while ((de = readdir(dp)) != NULL) {
             printf("dir entry -- %s\n", de->d_name);
             int dir_entry_len = strlen(de->d_name);
             memcpy(resp.buff+index, de->d_name, dir_entry_len);
             index += dir_entry_len;
             resp.buff[index++] = delimiter;
+            entry_count++;
         }
 
         resp.packet_size = index;
-        
+        writen(cfd, &entry_count, sizeof(int));
         writen(cfd, &resp.packet_size, sizeof(resp.packet_size));
         writen(cfd, resp.buff, resp.packet_size);
         printf("sending directories -- %s\n", resp.buff);

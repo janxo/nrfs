@@ -1,8 +1,3 @@
 ./net_raid_server 127.0.0.1 10001 storage1_dir
 ./net_raid_server 127.0.0.1 10002 storage2_dir
 ./net_raid_server 127.0.0.1 11111 storage3_dir
-
-sudo apt-get install libssl-dev
-
-
-restore-file ურევს 2 რექუესტს აგზავნის
